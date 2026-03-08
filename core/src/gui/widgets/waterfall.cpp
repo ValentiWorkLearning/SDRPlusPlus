@@ -568,27 +568,43 @@ namespace ImGui {
         int vfoMaxOffset = std::clamp<int>(((vfoMaxFreq / (wholeBandwidth / 2.0)) * (double)(rawFFTSize / 2)) + (rawFFTSize / 2), 0, rawFFTSize);
         int vfoMaxSideOffset = std::clamp<int>(((vfoMaxSizeFreq / (wholeBandwidth / 2.0)) * (double)(rawFFTSize / 2)) + (rawFFTSize / 2), 0, rawFFTSize);
 
-        double avg = 0;
-        float max = -INFINITY;
+        float avg = 0.0f;
+        float max = -std::numeric_limits<float>::infinity();
         int avgCount = 0;
 
-        // Calculate Left average
-        for (int i = vfoMinSideOffset; i < vfoMinOffset; i++) {
+        const int fftSize = fftLines;
+
+        int leftStart  = std::max(0, vfoMinSideOffset);
+        int leftEnd    = std::min(vfoMinOffset, fftSize);
+
+        int rightStart = std::max(0, vfoMaxOffset + 1);
+        int rightEnd   = std::min(vfoMaxSideOffset + 1, fftSize);
+
+        int sigStart   = std::max(0, vfoMinOffset);
+        int sigEnd     = std::min(vfoMaxOffset + 1, fftSize);
+
+        for (int i = leftStart; i < leftEnd; ++i)
+        {
+            avg += fftLine[i];
+            avgCount++;
+        }
+        for (int i = rightStart; i < rightEnd; ++i)
+        {
             avg += fftLine[i];
             avgCount++;
         }
 
-        // Calculate Right average
-        for (int i = vfoMaxOffset + 1; i < vfoMaxSideOffset; i++) {
-            avg += fftLine[i];
-            avgCount++;
+        if (avgCount > 0)
+        {
+            avg /= static_cast<float>(avgCount);
         }
-
-        avg /= (double)(avgCount);
-
-        // Calculate max
-        for (int i = vfoMinOffset; i <= vfoMaxOffset; i++) {
-            if (fftLine[i] > max) { max = fftLine[i]; }
+        else
+        {
+            avg = 0.0f;
+        }
+        for (int i = sigStart; i < sigEnd; ++i)
+        {
+            max = std::max(max, fftLine[i]);
         }
 
         strength = max;
