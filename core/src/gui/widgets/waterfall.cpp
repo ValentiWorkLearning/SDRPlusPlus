@@ -2,6 +2,8 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <imutils.h>
+
+#define NOMINMAX
 #include <algorithm>
 #include <volk/volk.h>
 #include <utils/flog.h>
