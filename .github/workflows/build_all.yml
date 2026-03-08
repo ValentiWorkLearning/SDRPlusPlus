@@ -101,7 +101,7 @@ jobs:
               path: ${{runner.workspace}}/sdrpp_windows_x64.zip
 
     build_macos_arm:
-        runs-on: macos-15
+        runs-on: macos-latest
 
         steps:
         - uses: actions/checkout@v4
