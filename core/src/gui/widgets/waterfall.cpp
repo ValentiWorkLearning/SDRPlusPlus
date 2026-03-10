@@ -607,7 +607,7 @@ namespace ImGui {
         }
         for (int i = sigStart; i < sigEnd; ++i)
         {
-            max = std::max(max, fftLine[i]);
+            max = (std::max)(max, fftLine[i]);
         }
 
         strength = max;
