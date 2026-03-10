@@ -5,6 +5,7 @@
 
 #define NOMINMAX
 #include <algorithm>
+#include <limits>
 #include <volk/volk.h>
 #include <utils/flog.h>
 #include <gui/gui.h>
@@ -576,14 +577,14 @@ namespace ImGui {
 
         const int fftSize = fftLines;
 
-        int leftStart  = std::max(0, vfoMinSideOffset);
-        int leftEnd    = std::min(vfoMinOffset, fftSize);
+        int leftStart  = (std::max)(0, vfoMinSideOffset);
+        int leftEnd    = (std::min)(vfoMinOffset, fftSize);
 
-        int rightStart = std::max(0, vfoMaxOffset + 1);
-        int rightEnd   = std::min(vfoMaxSideOffset + 1, fftSize);
+        int rightStart = (std::max)(0, vfoMaxOffset + 1);
+        int rightEnd   = (std::min)(vfoMaxSideOffset + 1, fftSize);
 
-        int sigStart   = std::max(0, vfoMinOffset);
-        int sigEnd     = std::min(vfoMaxOffset + 1, fftSize);
+        int sigStart   = (std::max)(0, vfoMinOffset);
+        int sigEnd     = (std::min)(vfoMaxOffset + 1, fftSize);
 
         for (int i = leftStart; i < leftEnd; ++i)
         {
