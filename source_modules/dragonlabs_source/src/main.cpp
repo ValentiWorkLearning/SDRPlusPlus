@@ -7,8 +7,11 @@
 #include <utils/optionlist.h>
 #include <fstream>
 #include <dlcr.h>
+
+#ifdef DRAGONLABS_SOURCE_ENABLE_DEBUG
 #include <dlcr_internal.h>
 #include <lmx2572.h>
+#endif
 
 SDRPP_MOD_INFO{
     /* Name:            */ "dragonlabs_source",
@@ -261,6 +264,7 @@ private:
             // TODO: Save
         }
 
+#ifdef DRAGONLABS_SOURCE_ENABLE_DEBUG
         SmGui::Checkbox(CONCAT("Debug##_dlcr_debug_", _this->name), &_this->debug);
 
         if (_this->debug) {
@@ -383,6 +387,7 @@ private:
 
             ImGui::Separator();
         }
+#endif
     }
 
     static void callback(dlcr_complex_t* samples[DLCR_CHANNEL_COUNT], size_t count, size_t drops, void* ctx) {
