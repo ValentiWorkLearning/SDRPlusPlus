@@ -93,7 +93,7 @@ namespace backend {
         if (window == NULL)
             return 1;
         glfwMakeContextCurrent(window);
-        glfwSwapInterval(true); // Enable vsync
+        glfwSwapInterval(false); // Disable vsync temporarily to improve performance
     #else
         const char* glsl_version = "#version 120";
         monitor = NULL;
@@ -235,8 +235,8 @@ namespace backend {
     }
 
     int renderLoop() {
-        const auto targetFrameDuration = std::chrono::milliseconds(33); // ~30 FPS
-        auto lastFrameTime = std::chrono::steady_clock::now();
+        constexpr auto targetFrameDuration = std::chrono::milliseconds(33);
+        auto nextFrame = std::chrono::steady_clock::now();
 
         // Main loop
         while (!glfwWindowShouldClose(window)) {
@@ -295,12 +295,12 @@ namespace backend {
 
             render();
 
-            auto frameEnd = std::chrono::steady_clock::now();
-            auto frameTime = frameEnd - lastFrameTime;
-            if (frameTime < targetFrameDuration) {
-                std::this_thread::sleep_for(targetFrameDuration - frameTime);
+            nextFrame += targetFrameDuration;
+            std::this_thread::sleep_until(nextFrame);
+
+            if (std::chrono::steady_clock::now() > nextFrame + targetFrameDuration) {
+                nextFrame = std::chrono::steady_clock::now();
             }
-            lastFrameTime = std::chrono::steady_clock::now();
         }
 
         return 0;
