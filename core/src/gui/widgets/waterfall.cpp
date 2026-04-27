@@ -115,6 +115,17 @@ namespace ImGui {
 
     void WaterFall::init() {
         glGenTextures(1, &textureId);
+
+        glBindTexture(GL_TEXTURE_2D, textureId);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+        textureAllocated = false;
+        waterfallFullUpdate = true;
+        wfHeadRow = 0;
     }
 
     void WaterFall::drawFFT() {
@@ -206,26 +217,52 @@ namespace ImGui {
     }
 
     void WaterFall::drawWaterfall() {
-        if (waterfallUpdate) {
-            waterfallUpdate = false;
+        if (waterfallFullUpdate) {
+            waterfallFullUpdate = false;
             updateWaterfallTexture();
         }
+        else {
+            uploadPendingWaterfallRows();
+        }
+
+        float v0 = (float)wfHeadRow / (float)waterfallHeight;
+        float v1 = v0 + 1.0f;
+
         {
             std::lock_guard<std::mutex> lck(texMtx);
-            window->DrawList->AddImage((void*)(intptr_t)textureId, wfMin, wfMax);
+
+            window->DrawList->AddImage(
+                (void*)(intptr_t)textureId,
+                wfMin,
+                wfMax,
+                ImVec2(0.0f, v0),
+                ImVec2(1.0f, v1));
         }
-        
+
         ImVec2 mPos = ImGui::GetMousePos();
 
-        if (IS_IN_AREA(mPos, wfMin, wfMax) && !gui::mainWindow.lockWaterfallControls && !inputHandled) {
+        if (IS_IN_AREA(mPos, wfMin, wfMax) &&
+            !gui::mainWindow.lockWaterfallControls &&
+            !inputHandled) {
             for (auto const& [name, vfo] : vfos) {
-                window->DrawList->AddRectFilled(vfo->wfRectMin, vfo->wfRectMax, vfo->color);
-                if (!vfo->lineVisible) { continue; }
-                window->DrawList->AddLine(vfo->wfLineMin, vfo->wfLineMax, (name == selectedVFO) ? IM_COL32(255, 0, 0, 255) : IM_COL32(255, 255, 0, 255), style::uiScale);
+                window->DrawList->AddRectFilled(
+                    vfo->wfRectMin,
+                    vfo->wfRectMax,
+                    vfo->color);
+
+                if (!vfo->lineVisible)
+                    continue;
+
+                window->DrawList->AddLine(
+                    vfo->wfLineMin,
+                    vfo->wfLineMax,
+                    (name == selectedVFO)
+                        ? IM_COL32(255, 0, 0, 255)
+                        : IM_COL32(255, 255, 0, 255),
+                    style::uiScale);
             }
         }
     }
-
     void WaterFall::drawVFOs() {
         for (auto const& [name, vfo] : vfos) {
             vfo->draw(window, name == selectedVFO);
@@ -644,6 +681,7 @@ namespace ImGui {
         }
         delete[] tempData;
         waterfallUpdate = true;
+        waterfallFullUpdate = true;
     }
 
     void WaterFall::drawBandPlan() {
@@ -719,11 +757,36 @@ namespace ImGui {
 
     void WaterFall::updateWaterfallTexture() {
         std::lock_guard<std::mutex> lck(texMtx);
+
         glBindTexture(GL_TEXTURE_2D, textureId);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, dataWidth, waterfallHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, (uint8_t*)waterfallFb);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+
+        if (!textureAllocated) {
+            glTexImage2D(
+                GL_TEXTURE_2D,
+                0,
+                GL_RGBA,
+                dataWidth,
+                waterfallHeight,
+                0,
+                GL_RGBA,
+                GL_UNSIGNED_BYTE,
+                waterfallFb);
+
+            textureAllocated = true;
+        }
+        else {
+            glTexSubImage2D(
+                GL_TEXTURE_2D,
+                0,
+                0,
+                0,
+                dataWidth,
+                waterfallHeight,
+                GL_RGBA,
+                GL_UNSIGNED_BYTE,
+                waterfallFb);
+        }
     }
 
     void WaterFall::onPositionChange() {
@@ -733,6 +796,15 @@ namespace ImGui {
     void WaterFall::onResize() {
         std::lock_guard<std::recursive_mutex> lck(latestFFTMtx);
         std::lock_guard<std::mutex> lck2(smoothingBufMtx);
+
+        textureAllocated = false;
+        waterfallFullUpdate = true;
+        wfHeadRow = 0;
+
+        {
+            std::lock_guard<std::mutex> ql(pendingRowsMtx);
+            pendingRows.clear();
+        }
         // return if widget is too small
         if (widgetSize.x < 100 || widgetSize.y < 100) {
             return;
@@ -902,58 +974,94 @@ namespace ImGui {
         return rawFFTs;
     }
 
+    void WaterFall::uploadPendingWaterfallRows() {
+        std::vector<PendingRow> rows;
+
+        {
+            std::lock_guard<std::mutex> lck(pendingRowsMtx);
+            rows.swap(pendingRows);
+        }
+
+        if (rows.empty())
+            return;
+
+        std::lock_guard<std::mutex> lck(texMtx);
+
+        glBindTexture(GL_TEXTURE_2D, textureId);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+
+        for (auto& r : rows) {
+            glTexSubImage2D(
+                GL_TEXTURE_2D,
+                0,
+                0,
+                r.row,
+                dataWidth,
+                1,
+                GL_RGBA,
+                GL_UNSIGNED_BYTE,
+                r.pixels.data());
+        }
+    }
+
     void WaterFall::pushFFT() {
-        if (rawFFTs == NULL) { return; }
+        if (rawFFTs == NULL)
+            return;
+
         std::lock_guard<std::recursive_mutex> lck(latestFFTMtx);
+
         double offsetRatio = viewOffset / (wholeBandwidth / 2.0);
-        int drawDataSize = (viewBandwidth / wholeBandwidth) * rawFFTSize;
-        int drawDataStart = (((double)rawFFTSize / 2.0) * (offsetRatio + 1)) - (drawDataSize / 2);
+
+        int drawDataSize =
+            (viewBandwidth / wholeBandwidth) * rawFFTSize;
+
+        int drawDataStart =
+            (((double)rawFFTSize / 2.0) * (offsetRatio + 1)) - (drawDataSize / 2);
+
+        doZoom(
+            drawDataStart,
+            drawDataSize,
+            rawFFTSize,
+            dataWidth,
+            &rawFFTs[currentFFTLine * rawFFTSize],
+            latestFFT);
 
         if (waterfallVisible) {
-            doZoom(drawDataStart, drawDataSize, rawFFTSize, dataWidth, &rawFFTs[currentFFTLine * rawFFTSize], latestFFT);
-            memmove(&waterfallFb[dataWidth], waterfallFb, dataWidth * (waterfallHeight - 1) * sizeof(uint32_t));
-            float pixel;
-            float dataRange = waterfallMax - waterfallMin;
+            wfHeadRow = (wfHeadRow - 1 + waterfallHeight) % waterfallHeight;
+
+            uint32_t* rowPtr =
+                &waterfallFb[wfHeadRow * dataWidth];
+
+            float dataRange =
+                waterfallMax - waterfallMin;
+
             for (int j = 0; j < dataWidth; j++) {
-                pixel = (std::clamp<float>(latestFFT[j], waterfallMin, waterfallMax) - waterfallMin) / dataRange;
-                int id = (int)(pixel * (WATERFALL_RESOLUTION - 1));
-                waterfallFb[j] = waterfallPallet[id];
-            }
-            waterfallUpdate = true;
-        }
-        else {
-            doZoom(drawDataStart, drawDataSize, rawFFTSize, dataWidth, rawFFTs, latestFFT);
-            fftLines = 1;
-        }
+                float pixel =
+                    (std::clamp(
+                         latestFFT[j],
+                         waterfallMin,
+                         waterfallMax) -
+                     waterfallMin) /
+                    dataRange;
 
-        // Apply smoothing if enabled
-        if (fftSmoothing && latestFFT != NULL && smoothingBuf != NULL && fftLines != 0) {
-            std::lock_guard<std::mutex> lck2(smoothingBufMtx);
-            volk_32f_s32f_multiply_32f(latestFFT, latestFFT, fftSmoothingAlpha, dataWidth);
-            volk_32f_s32f_multiply_32f(smoothingBuf, smoothingBuf, fftSmoothingBeta, dataWidth);
-            volk_32f_x2_add_32f(smoothingBuf, latestFFT, smoothingBuf, dataWidth);
-            memcpy(latestFFT, smoothingBuf, dataWidth * sizeof(float));
-        }
+                int id =
+                    (int)(pixel * (WATERFALL_RESOLUTION - 1));
 
-        if (selectedVFO != "" && vfos.size() > 0) {
-            float dummy;
-            if (snrSmoothing) {
-                float newSNR = 0.0f;
-                calculateVFOSignalInfo(waterfallVisible ? &rawFFTs[currentFFTLine * rawFFTSize] : rawFFTs, vfos[selectedVFO], dummy, newSNR);
-                selectedVFOSNR = (snrSmoothingBeta*selectedVFOSNR) + (snrSmoothingAlpha*newSNR);
+                rowPtr[j] = waterfallPallet[id];
             }
-            else {
-                calculateVFOSignalInfo(waterfallVisible ? &rawFFTs[currentFFTLine * rawFFTSize] : rawFFTs, vfos[selectedVFO], dummy, selectedVFOSNR);
+
+            // copy row for GUI-thread upload
+            PendingRow pending;
+            pending.row = wfHeadRow;
+            pending.pixels.assign(rowPtr, rowPtr + dataWidth);
+
+            {
+                std::lock_guard<std::mutex> lck2(pendingRowsMtx);
+                pendingRows.emplace_back(std::move(pending));
             }
         }
 
-        // If FFT hold is enabled, update it
-        if (fftHold && latestFFT != NULL && latestFFTHold != NULL && fftLines != 0) {
-            for (int i = 1; i < dataWidth; i++) {
-                latestFFTHold[i] = std::max<float>(latestFFT[i], latestFFTHold[i] - fftHoldSpeed);
-            }
-        }
-
+        fftLines = std::min(fftLines + 1, waterfallHeight);
         buf_mtx.unlock();
     }
 
@@ -971,6 +1079,7 @@ namespace ImGui {
             waterfallPallet[i] = ((uint32_t)255 << 24) | ((uint32_t)b << 16) | ((uint32_t)g << 8) | (uint32_t)r;
         }
         updateWaterfallFb();
+        waterfallFullUpdate = true;
     }
 
     void WaterFall::updatePalletteFromArray(float* colors, int colorCount) {
@@ -987,6 +1096,7 @@ namespace ImGui {
             waterfallPallet[i] = ((uint32_t)255 << 24) | ((uint32_t)b << 16) | ((uint32_t)g << 8) | (uint32_t)r;
         }
         updateWaterfallFb();
+        waterfallFullUpdate = true;
     }
 
     void WaterFall::autoRange() {
@@ -1107,11 +1217,16 @@ namespace ImGui {
 
     void WaterFall::setWaterfallMin(float min) {
         std::lock_guard<std::recursive_mutex> lck(buf_mtx);
-        if (min == waterfallMin) {
+
+        if (min == waterfallMin)
             return;
-        }
+
         waterfallMin = min;
-        if (_fullUpdate) { updateWaterfallFb(); };
+
+        if (_fullUpdate) {
+            updateWaterfallFb();
+            waterfallFullUpdate = true;
+        }
     }
 
     float WaterFall::getWaterfallMin() {
@@ -1120,11 +1235,17 @@ namespace ImGui {
 
     void WaterFall::setWaterfallMax(float max) {
         std::lock_guard<std::recursive_mutex> lck(buf_mtx);
-        if (max == waterfallMax) {
+
+        if (max == waterfallMax)
             return;
-        }
+
         waterfallMax = max;
-        if (_fullUpdate) { updateWaterfallFb(); };
+
+        if (_fullUpdate)
+        {
+            updateWaterfallFb();
+            waterfallFullUpdate = true;
+        }
     }
 
     float WaterFall::getWaterfallMax() {
