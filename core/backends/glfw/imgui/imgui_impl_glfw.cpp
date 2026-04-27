@@ -52,6 +52,8 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 
+#include <math.h> // isinf
+
 // Clang warnings with -Weverything
 #if defined(__clang__)
 #pragma clang diagnostic push
@@ -259,9 +261,11 @@ void ImGui_ImplGlfw_MouseButtonCallback(GLFWwindow* window, int button, int acti
     if (bd->PrevUserCallbackMousebutton != NULL && window == bd->Window)
         bd->PrevUserCallbackMousebutton(window, button, action, mods);
 
+    ImGuiIO& io = ImGui::GetIO();
+    io.FrameCountSinceLastInput = 0;
+
     ImGui_ImplGlfw_UpdateKeyModifiers(mods);
 
-    ImGuiIO& io = ImGui::GetIO();
     if (button >= 0 && button < ImGuiMouseButton_COUNT)
         io.AddMouseButtonEvent(button, action == GLFW_PRESS);
 }
@@ -273,6 +277,7 @@ void ImGui_ImplGlfw_ScrollCallback(GLFWwindow* window, double xoffset, double yo
         bd->PrevUserCallbackScroll(window, xoffset, yoffset);
 
     ImGuiIO& io = ImGui::GetIO();
+    io.FrameCountSinceLastInput = 0;
     io.AddMouseWheelEvent((float)xoffset, (float)yoffset);
 }
 
@@ -317,6 +322,7 @@ void ImGui_ImplGlfw_KeyCallback(GLFWwindow* window, int keycode, int scancode, i
     keycode = ImGui_ImplGlfw_TranslateUntranslatedKey(keycode, scancode);
 
     ImGuiIO& io = ImGui::GetIO();
+    io.FrameCountSinceLastInput = 0;
     ImGuiKey imgui_key = ImGui_ImplGlfw_KeyToImGuiKey(keycode);
     io.AddKeyEvent(imgui_key, (action == GLFW_PRESS));
     io.SetKeyEventNativeData(imgui_key, keycode, scancode); // To support legacy indexing (<1.87 user code)
@@ -339,6 +345,8 @@ void ImGui_ImplGlfw_CursorPosCallback(GLFWwindow* window, double x, double y)
         bd->PrevUserCallbackCursorPos(window, x, y);
 
     ImGuiIO& io = ImGui::GetIO();
+    io.FrameCountSinceLastInput = 0;
+
     io.AddMousePosEvent((float)x, (float)y);
     bd->LastValidMousePos = ImVec2((float)x, (float)y);
 }
@@ -636,6 +644,24 @@ void ImGui_ImplGlfw_NewFrame()
 
     // Update game controllers (if enabled and available)
     ImGui_ImplGlfw_UpdateGamepads();
+}
+
+void ImGui_ImplGlfw_WaitForEvent()
+{
+    if (!(ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_EnablePowerSavingMode))
+        return;
+
+    ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData();
+
+    bool window_is_hidden = !glfwGetWindowAttrib(bd->Window, GLFW_VISIBLE) || glfwGetWindowAttrib(bd->Window, GLFW_ICONIFIED);
+    double waiting_time = window_is_hidden ? INFINITY : ImGui::GetEventWaitingTime();
+    if (waiting_time > 0.0)
+    {
+        if (isinf(waiting_time))
+            glfwWaitEvents();
+        else
+            glfwWaitEventsTimeout(waiting_time);
+    }
 }
 
 #if defined(__clang__)

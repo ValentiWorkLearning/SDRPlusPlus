@@ -4217,6 +4217,24 @@ ImGuiKeyModFlags ImGui::GetMergedKeyModFlags()
     return key_mod_flags;
 }
 
+double ImGui::GetEventWaitingTime()
+{
+    ImGuiContext& g = *GImGui;
+
+    if ((g.IO.ConfigFlags & ImGuiConfigFlags_EnablePowerSavingMode) && g.IO.FrameCountSinceLastInput > 2)
+        return ImMax(0.0, g.MaxWaitBeforeNextFrame);
+
+    return 0.0;
+}
+
+void ImGui::SetMaxWaitBeforeNextFrame(double time)
+{
+    ImGuiContext& g = *GImGui;
+
+    g.MaxWaitBeforeNextFrame = ImMin(g.MaxWaitBeforeNextFrame, time);
+}
+
+
 void ImGui::NewFrame()
 {
     IM_ASSERT(GImGui != NULL && "No current context. Did you call ImGui::CreateContext() and ImGui::SetCurrentContext() ?");

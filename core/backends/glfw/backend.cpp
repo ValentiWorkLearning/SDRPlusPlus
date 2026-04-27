@@ -174,11 +174,13 @@ namespace backend {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGuiIO& io = ImGui::GetIO();
-        (void)io;
         io.IniFilename = NULL;
+        io.ConfigFlags |= ImGuiConfigFlags_EnablePowerSavingMode;
+        ImGui::SetMaxWaitBeforeNextFrame(1.0 / 30.0);
 
         // Setup Platform/Renderer bindings
         ImGui_ImplGlfw_InitForOpenGL(window, true);
+        
 
         if (!ImGui_ImplOpenGL3_Init(glsl_version)) {
             // If init fail, try to fall back on GLSL 1.2
@@ -240,6 +242,8 @@ namespace backend {
 
         // Main loop
         while (!glfwWindowShouldClose(window)) {
+
+            ImGui_ImplGlfw_WaitForEvent();
             glfwPollEvents();
 
             beginFrame();
