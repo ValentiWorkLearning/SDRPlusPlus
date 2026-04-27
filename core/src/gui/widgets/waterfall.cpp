@@ -1005,52 +1005,79 @@ namespace ImGui {
     }
 
     void WaterFall::pushFFT() {
-        if (rawFFTs == NULL)
+        if (rawFFTs == nullptr) {
             return;
+        }
 
         std::lock_guard<std::recursive_mutex> lck(latestFFTMtx);
 
-        double offsetRatio = viewOffset / (wholeBandwidth / 2.0);
+        const double offsetRatio = viewOffset / (wholeBandwidth / 2.0);
+        const int drawDataSize = (viewBandwidth / wholeBandwidth) * rawFFTSize;
+        const int drawDataStart =
+            (((double)rawFFTSize / 2.0) * (offsetRatio + 1.0)) - (drawDataSize / 2);
 
-        int drawDataSize =
-            (viewBandwidth / wholeBandwidth) * rawFFTSize;
+        float* src = waterfallVisible
+                         ? &rawFFTs[currentFFTLine * rawFFTSize]
+                         : rawFFTs;
 
-        int drawDataStart =
-            (((double)rawFFTSize / 2.0) * (offsetRatio + 1)) - (drawDataSize / 2);
+        // Always update top FFT once
+        doZoom(drawDataStart, drawDataSize, rawFFTSize, dataWidth, src, latestFFT);
 
-        doZoom(
-            drawDataStart,
-            drawDataSize,
-            rawFFTSize,
-            dataWidth,
-            &rawFFTs[currentFFTLine * rawFFTSize],
-            latestFFT);
+        if (!waterfallVisible) {
+            fftLines = 1;
+        }
 
+        // Apply smoothing if enabled
+        if (fftSmoothing && latestFFT != nullptr && smoothingBuf != nullptr && fftLines != 0) {
+            std::lock_guard<std::mutex> lck2(smoothingBufMtx);
+
+            volk_32f_s32f_multiply_32f(latestFFT, latestFFT, fftSmoothingAlpha, dataWidth);
+            volk_32f_s32f_multiply_32f(smoothingBuf, smoothingBuf, fftSmoothingBeta, dataWidth);
+            volk_32f_x2_add_32f(smoothingBuf, latestFFT, smoothingBuf, dataWidth);
+            memcpy(latestFFT, smoothingBuf, dataWidth * sizeof(float));
+        }
+
+        // SNR / VFO signal info stays independent from waterfall upload
+        if (selectedVFO != "" && vfos.size() > 0) {
+            float dummy = 0.0f;
+
+            if (snrSmoothing) {
+                float newSNR = 0.0f;
+                calculateVFOSignalInfo(src, vfos[selectedVFO], dummy, newSNR);
+                selectedVFOSNR =
+                    (snrSmoothingBeta * selectedVFOSNR) +
+                    (snrSmoothingAlpha * newSNR);
+            }
+            else {
+                calculateVFOSignalInfo(src, vfos[selectedVFO], dummy, selectedVFOSNR);
+            }
+        }
+
+        // If FFT hold is enabled, update it
+        if (fftHold && latestFFT != nullptr && latestFFTHold != nullptr && fftLines != 0) {
+            for (int i = 1; i < dataWidth; i++) {
+                latestFFTHold[i] =
+                    std::max<float>(latestFFT[i], latestFFTHold[i] - fftHoldSpeed);
+            }
+        }
+
+        // New optimized waterfall row upload path
         if (waterfallVisible) {
             wfHeadRow = (wfHeadRow - 1 + waterfallHeight) % waterfallHeight;
 
-            uint32_t* rowPtr =
-                &waterfallFb[wfHeadRow * dataWidth];
+            uint32_t* rowPtr = &waterfallFb[wfHeadRow * dataWidth];
 
-            float dataRange =
-                waterfallMax - waterfallMin;
+            const float dataRange = waterfallMax - waterfallMin;
 
             for (int j = 0; j < dataWidth; j++) {
-                float pixel =
-                    (std::clamp(
-                         latestFFT[j],
-                         waterfallMin,
-                         waterfallMax) -
-                     waterfallMin) /
+                const float pixel =
+                    (std::clamp<float>(latestFFT[j], waterfallMin, waterfallMax) - waterfallMin) /
                     dataRange;
 
-                int id =
-                    (int)(pixel * (WATERFALL_RESOLUTION - 1));
-
+                const int id = static_cast<int>(pixel * (WATERFALL_RESOLUTION - 1));
                 rowPtr[j] = waterfallPallet[id];
             }
 
-            // copy row for GUI-thread upload
             PendingRow pending;
             pending.row = wfHeadRow;
             pending.pixels.assign(rowPtr, rowPtr + dataWidth);
