@@ -8,6 +8,8 @@
 #include <version.h>
 #include <core.h>
 #include <filesystem>
+#include <chrono>
+#include <thread>
 #include <stb_image.h>
 #include <stb_image_resize.h>
 #include <gui/gui.h>
@@ -91,6 +93,7 @@ namespace backend {
         if (window == NULL)
             return 1;
         glfwMakeContextCurrent(window);
+        glfwSwapInterval(true); // Enable vsync
     #else
         const char* glsl_version = "#version 120";
         monitor = NULL;
@@ -218,7 +221,6 @@ namespace backend {
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-        glfwSwapInterval(vsync);
         glfwSwapBuffers(window);
     }
 
@@ -233,6 +235,9 @@ namespace backend {
     }
 
     int renderLoop() {
+        const auto targetFrameDuration = std::chrono::milliseconds(33); // ~30 FPS
+        auto lastFrameTime = std::chrono::steady_clock::now();
+
         // Main loop
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
@@ -289,6 +294,13 @@ namespace backend {
             }
 
             render();
+
+            auto frameEnd = std::chrono::steady_clock::now();
+            auto frameTime = frameEnd - lastFrameTime;
+            if (frameTime < targetFrameDuration) {
+                std::this_thread::sleep_for(targetFrameDuration - frameTime);
+            }
+            lastFrameTime = std::chrono::steady_clock::now();
         }
 
         return 0;

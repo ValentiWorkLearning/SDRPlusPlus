@@ -8,6 +8,9 @@
 #include <thread>
 #include <radio_interface.h>
 
+#include <pthread.h>
+#include <utils/threading.h>
+
 SDRPP_MOD_INFO{
     /* Name:            */ "discord_integration",
     /* Description:     */ "Discord Rich Presence module for SDR++",
@@ -65,6 +68,7 @@ private:
     void worker() {
         // TODO: Switch out for condition variable to terminate thread instantly
         // OR even better, the new timer class that I still need to add
+        utils::setCurrentThreadName("Discord Worker");
         while (workerRunning) {
             workerCounter++;
             if (workerCounter >= 1000) {

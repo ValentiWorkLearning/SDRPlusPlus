@@ -4,6 +4,9 @@
 
 #include <filesystem>
 
+#include <pthread.h>
+#include <utils/threading.h>
+
 ConfigManager::ConfigManager() {
 }
 
@@ -80,6 +83,7 @@ void ConfigManager::release(bool modified) {
 }
 
 void ConfigManager::autoSaveWorker() {
+    utils::setCurrentThreadName("Config AutoSave");
     while (autoSaveEnabled) {
         if (!mtx.try_lock()) {
             flog::warn("ConfigManager locked, waiting...");

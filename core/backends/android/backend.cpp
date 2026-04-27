@@ -15,6 +15,7 @@
 #include <gui/style.h>
 #include <gui/menus/theme.h>
 #include <filesystem>
+#include <chrono>
 
 // Credit to the ImGui android OpenGL3 example for a lot of this code!
 
@@ -173,6 +174,9 @@ namespace backend {
     void setMouseScreenPos(double x, double y) {}
 
     int renderLoop() {
+        const auto targetFrameDuration = std::chrono::milliseconds(33); // ~30 FPS
+        auto lastFrameTime = std::chrono::steady_clock::now();
+
         while (true) {
             int out_events;
             struct android_poll_source* out_data;
@@ -206,7 +210,7 @@ namespace backend {
                 // Open on-screen (soft) input if requested by Dear ImGui
                 static bool WantTextInputLast = false;
                 if (io.WantTextInput && !WantTextInputLast)
-                ShowSoftKeyboardInput();
+                    ShowSoftKeyboardInput();
                 WantTextInputLast = io.WantTextInput;
 
                 // Render
@@ -218,6 +222,13 @@ namespace backend {
                     gui::mainWindow.draw();
                 }
                 render();
+
+                auto frameEnd = std::chrono::steady_clock::now();
+                auto frameTime = frameEnd - lastFrameTime;
+                if (frameTime < targetFrameDuration) {
+                    std::this_thread::sleep_for(targetFrameDuration - frameTime);
+                }
+                lastFrameTime = std::chrono::steady_clock::now();
             }
             else {
                 std::this_thread::sleep_for(std::chrono::milliseconds(30));

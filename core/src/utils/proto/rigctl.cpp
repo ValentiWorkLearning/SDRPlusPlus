@@ -1,6 +1,8 @@
 #include "rigctl.h"
 #include <math.h>
 
+#include <utils/threading.h>
+
 namespace net::rigctl {
     Client::Client(std::shared_ptr<Socket> sock) {
         this->sock = sock;
@@ -252,6 +254,7 @@ namespace net::rigctl {
     }
 
     void Server::listenWorker() {
+        utils::setCurrentThreadName("Rigctl Listen Worker");
         while (true) {
             // Wait for new client
             auto sock = listener->accept();
@@ -270,6 +273,7 @@ namespace net::rigctl {
     }
 
     void Server::acceptWorker(std::shared_ptr<Socket> sock) {
+        utils::setCurrentThreadName("Rigctl Accept Worker");
         while (true) {
             // Receive command
             std::vector<std::string> args;

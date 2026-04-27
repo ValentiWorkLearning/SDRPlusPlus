@@ -10,6 +10,9 @@
 #include <aaudio/AAudio.h>
 #include <core.h>
 
+#include <pthread.h>
+#include <utils/threading.h>
+
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
 SDRPP_MOD_INFO{
@@ -116,6 +119,7 @@ private:
     }
 
     void restart() {
+        utils::setCurrentThreadName("Android Audio Restart");
         if (running) { doStop(); }
         if (running) { doStart(); }
     }

@@ -5,6 +5,9 @@
 #include <signal_path/signal_path.h>
 #include <chrono>
 
+#include <pthread.h>
+#include <utils/threading.h>
+
 SDRPP_MOD_INFO{
     /* Name:            */ "scanner",
     /* Description:     */ "Frequency scanner for SDR++",
@@ -137,6 +140,7 @@ private:
     }
 
     void worker() {
+        utils::setCurrentThreadName("Scanner Worker");
         // 10Hz scan loop
         while (running) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));

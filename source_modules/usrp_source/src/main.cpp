@@ -13,6 +13,9 @@
 #include <utils/optionlist.h>
 #include <utils/freq_formatting.h>
 
+#include <pthread.h>
+#include <utils/threading.h>
+
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
 SDRPP_MOD_INFO{
@@ -433,6 +436,7 @@ private:
     }
 
     void worker() {
+        utils::setCurrentThreadName("USRP Worker");
         // TODO: Select a better buffer size that will avoid bad timing
         int bufferSize = sampleRate / 200;
         try {

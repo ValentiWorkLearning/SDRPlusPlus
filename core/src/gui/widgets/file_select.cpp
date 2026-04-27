@@ -4,6 +4,9 @@
 #include <gui/file_dialogs.h>
 #include <core.h>
 
+#include <pthread.h>
+#include <utils/threading.h>
+
 FileSelect::FileSelect(std::string defaultPath, std::vector<std::string> filter) {
     _filter = filter;
     root = (std::string)core::args["root"];
@@ -64,6 +67,7 @@ bool FileSelect::pathIsValid() {
 }
 
 void FileSelect::worker() {
+    utils::setCurrentThreadName("FileSelect Worker");
     auto file = pfd::open_file("Open File", pathValid ? std::filesystem::path(expandString(path)).parent_path().string() : "", _filter);
     std::vector<std::string> res = file.result();
 

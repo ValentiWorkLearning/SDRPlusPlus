@@ -11,6 +11,9 @@
 #include <algorithm>
 #include <regex>
 
+#include <pthread.h>
+#include <utils/threading.h>
+
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
 SDRPP_MOD_INFO{
@@ -446,6 +449,7 @@ private:
 
     static void worker(void* ctx) {
         PlutoSDRSourceModule* _this = (PlutoSDRSourceModule*)ctx;
+        utils::setCurrentThreadName("PlutoSDR Worker");
         int blockSize = _this->samplerate / 200.0f;
 
         // Acquire channels
