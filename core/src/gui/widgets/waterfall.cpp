@@ -8,6 +8,11 @@
 #include <gui/gui.h>
 #include <gui/style.h>
 
+// Windows build fixup for older opengl headers
+#ifndef GL_CLAMP_TO_EDGE
+#define GL_CLAMP_TO_EDGE 0x812F
+#endif
+
 float DEFAULT_COLOR_MAP[][3] = {
     { 0x00, 0x00, 0x20 },
     { 0x00, 0x00, 0x30 },
