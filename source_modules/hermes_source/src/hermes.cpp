@@ -1,7 +1,6 @@
 #include "hermes.h"
 #include <utils/flog.h>
 
-#include <pthread.h>
 #include <utils/threading.h>
 
 namespace hermes {

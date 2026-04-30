@@ -4,7 +4,6 @@
 
 #include <filesystem>
 
-#include <pthread.h>
 #include <utils/threading.h>
 
 ConfigManager::ConfigManager() {

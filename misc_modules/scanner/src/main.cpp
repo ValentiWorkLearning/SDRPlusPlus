@@ -5,7 +5,6 @@
 #include <signal_path/signal_path.h>
 #include <chrono>
 
-#include <pthread.h>
 #include <utils/threading.h>
 
 SDRPP_MOD_INFO{

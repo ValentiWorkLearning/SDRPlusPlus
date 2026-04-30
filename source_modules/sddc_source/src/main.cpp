@@ -8,7 +8,6 @@
 #include <atomic>
 #include <sddc.h>
 
-#include <pthread.h>
 #include <utils/threading.h>
 
 SDRPP_MOD_INFO{

@@ -2,7 +2,6 @@
 #include <utils/flog.h>
 #include <inttypes.h>
 
-#include <pthread.h>
 #include <utils/threading.h>
 
 SpectranHTTPClient::SpectranHTTPClient(std::string host, int port, dsp::stream<dsp::complex_t>* stream) {

@@ -12,7 +12,6 @@
 #include <gui/style.h>
 #include <gui/smgui.h>
 
-#include <pthread.h>
 #include <utils/threading.h>
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())

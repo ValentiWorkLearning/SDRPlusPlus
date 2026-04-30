@@ -8,7 +8,6 @@
 #include <thread>
 #include <radio_interface.h>
 
-#include <pthread.h>
 #include <utils/threading.h>
 
 SDRPP_MOD_INFO{

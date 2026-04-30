@@ -16,7 +16,6 @@
 #include <unistd.h>
 #endif
 
-#include <pthread.h>
 #include <utils/threading.h>
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
