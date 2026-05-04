@@ -148,7 +148,8 @@ private:
         flog::info("selectDevice called with name='{}'", name);
 
         int i = 0;
-        bool found = false;;
+        bool found = false;
+        ;
         for (auto& args : devList) {
             flog::info(
                 "devList[{}]: label='{}' device_channel='{}' ip='{}' port='{}'",
@@ -243,6 +244,34 @@ private:
         }
 
         hasAgc = dev->hasGainMode(SOAPY_SDR_RX, channelId);
+
+        uiSettings.clear();
+
+        try {
+            auto settings = dev->getSettingInfo(SOAPY_SDR_RX, channelId);
+
+            for (const auto& setting : settings) {
+                if (setting.type != SoapySDR::ArgInfo::BOOL) {
+                    continue;
+                }
+
+                UiSetting uiSetting;
+                uiSetting.info = setting;
+
+                try {
+                    uiSetting.boolValue =
+                        settingStringToBool(dev->readSetting(SOAPY_SDR_RX, channelId, setting.key));
+                }
+                catch (...) {
+                    uiSetting.boolValue = settingStringToBool(setting.value);
+                }
+
+                uiSettings.push_back(uiSetting);
+            }
+        }
+        catch (const std::exception& e) {
+            flog::warn("Could not query Soapy settings: {}", e.what());
+        }
 
         SoapySDR::Device::unmake(dev);
 
@@ -376,7 +405,21 @@ private:
         }
 
         _this->dev->setFrequency(SOAPY_SDR_RX, _this->channelId, _this->freq);
-
+        for (const auto& setting : _this->uiSettings) {
+            try {
+                _this->dev->writeSetting(
+                    SOAPY_SDR_RX,
+                    _this->channelId,
+                    setting.info.key,
+                    boolToSettingString(setting.boolValue));
+            }
+            catch (const std::exception& e) {
+                flog::warn(
+                    "Could not apply Soapy setting '{}': {}",
+                    setting.info.key,
+                    e.what());
+            }
+        }
         _this->devStream = _this->dev->setupStream(SOAPY_SDR_RX, "CF32");
         _this->dev->activateStream(_this->devStream);
         _this->running = true;
@@ -520,6 +563,9 @@ private:
                 _this->saveCurrent();
             }
         }
+
+
+        menuHandlerSettings(_this);
     }
 
     static void _worker(SoapyModule* _this) {
@@ -537,6 +583,109 @@ private:
         }
     }
 
+    struct UiSetting {
+        SoapySDR::ArgInfo info;
+        bool boolValue = false;
+    };
+
+    static bool settingStringToBool(const std::string& value) {
+        return value == "true" ||
+               value == "1" ||
+               value == "yes" ||
+               value == "on";
+    }
+
+    static std::string boolToSettingString(bool value) {
+        return value ? "true" : "false";
+    }
+
+    static void menuHandlerSettings(SoapyModule* _this) {
+        if (_this->uiSettings.empty()) {
+            return;
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+
+        ImGui::TextUnformatted("Extra settings:");
+
+        ImGui::Separator();
+        ImGui::Spacing();
+
+
+        float maxLabelWidth = 0.0f;
+
+        for (const auto& setting : _this->uiSettings) {
+            const std::string displayName =
+                setting.info.name.empty() ? setting.info.key : setting.info.name;
+
+            maxLabelWidth = std::max(
+                maxLabelWidth,
+                ImGui::CalcTextSize(displayName.c_str()).x);
+        }
+
+        const float checkboxColumnX =
+            ImGui::GetCursorPosX() + maxLabelWidth + ImGui::GetStyle().ItemSpacing.x * 2.0f;
+
+        for (auto& setting : _this->uiSettings) {
+            const std::string displayName =
+                setting.info.name.empty() ? setting.info.key : setting.info.name;
+
+            const std::string checkboxId =
+                "##_soapy_setting_" + _this->name + "_" + setting.info.key;
+
+            ImGui::TextUnformatted(displayName.c_str());
+
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(checkboxColumnX);
+
+            const bool changed = SmGui::Checkbox(
+                checkboxId.c_str(),
+                &setting.boolValue);
+
+            const bool checkboxHovered = ImGui::IsItemHovered();
+
+            ImGui::SameLine();
+
+            const char* stateText = setting.boolValue ? "ON" : "OFF";
+
+            ImGui::PushStyleColor(
+                ImGuiCol_Text,
+                ImGui::GetStyleColorVec4(
+                    setting.boolValue ? ImGuiCol_CheckMark : ImGuiCol_TextDisabled));
+
+            ImGui::TextUnformatted(stateText);
+            ImGui::PopStyleColor();
+
+            const bool textHovered = ImGui::IsItemHovered();
+
+            if (!setting.info.description.empty() && (checkboxHovered || textHovered)) {
+                ImGui::SetTooltip("%s", setting.info.description.c_str());
+            }
+
+            if (changed) {
+                if (_this->running) {
+                    try {
+                        _this->dev->writeSetting(
+                            SOAPY_SDR_RX,
+                            _this->channelId,
+                            setting.info.key,
+                            boolToSettingString(setting.boolValue));
+                    }
+                    catch (const std::exception& e) {
+                        flog::error(
+                            "Could not write Soapy setting '{}': {}",
+                            setting.info.key,
+                            e.what());
+                    }
+                }
+
+                _this->saveCurrent();
+            }
+        }
+    }
+
+private:
     std::string name;
     bool enabled = true;
     dsp::stream<dsp::complex_t> stream;
@@ -567,6 +716,7 @@ private:
     int uiBandwidthId = 0;
     std::vector<float> bandwidthList;
     std::string txtBwList;
+    std::vector<UiSetting> uiSettings;
 };
 
 MOD_EXPORT void _INIT_() {
