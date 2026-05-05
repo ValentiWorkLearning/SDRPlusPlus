@@ -66,12 +66,16 @@ cp $build_dir/source_modules/sdrpp_server_source/Release/sdrpp_server_source.dll
 
 cp $build_dir/source_modules/spyserver_source/Release/spyserver_source.dll sdrpp_windows_x64/modules/
 
+cp $build_dir/source_modules/soapy_source/Release/soapy_source.dll sdrpp_windows_x64/modules/
+
 # cp $build_dir/source_modules/usrp_source/Release/usrp_source.dll sdrpp_windows_x64/modules/
 
 
 # Copy sink modules
 cp $build_dir/sink_modules/audio_sink/Release/audio_sink.dll sdrpp_windows_x64/modules/
 cp "C:/Program Files (x86)/RtAudio/bin/rtaudio.dll" sdrpp_windows_x64/
+
+cp $build_dir/sink_modules/new_portaudio_sink/Release/new_portaudio_sink.dll sdrpp_windows_x64/modules/
 
 cp $build_dir/sink_modules/network_sink/Release/network_sink.dll sdrpp_windows_x64/modules/
 
