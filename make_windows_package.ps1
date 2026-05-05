@@ -66,10 +66,71 @@ cp $build_dir/source_modules/sdrpp_server_source/Release/sdrpp_server_source.dll
 
 cp $build_dir/source_modules/spyserver_source/Release/spyserver_source.dll sdrpp_windows_x64/modules/
 
-cp $build_dir/source_modules/soapy_source/Release/soapy_source.dll sdrpp_windows_x64/modules/
-
 # cp $build_dir/source_modules/usrp_source/Release/usrp_source.dll sdrpp_windows_x64/modules/
 
+
+# Soapy SDR runtime dependencies - try vcpkg first, then Pothos install
+$VcpkgRoot = "C:/vcpkg/installed/x64-windows"
+$PothosRoot = "C:/Program Files/PothosSDR"
+
+cp $build_dir/source_modules/soapy_source/Release/soapy_source.dll sdrpp_windows_x64/modules/
+
+# Runtime SoapySDR DLL from the same dependency tree as the build
+if (Test-Path "$VcpkgRoot/bin/SoapySDR.dll") {
+    cp "$VcpkgRoot/bin/SoapySDR.dll" sdrpp_windows_x64/
+} elseif (Test-Path "$PothosRoot/bin/SoapySDR.dll") {
+    cp "$PothosRoot/bin/SoapySDR.dll" sdrpp_windows_x64/
+} else {
+    Write-Error "SoapySDR.dll not found"
+}
+
+# Optional utility for package debugging
+if (Test-Path "$VcpkgRoot/tools/soapysdr/SoapySDRUtil.exe") {
+    cp "$VcpkgRoot/tools/soapysdr/SoapySDRUtil.exe" sdrpp_windows_x64/
+} elseif (Test-Path "$PothosRoot/bin/SoapySDRUtil.exe") {
+    cp "$PothosRoot/bin/SoapySDRUtil.exe" sdrpp_windows_x64/
+}
+
+# Bundle Soapy plugin DLLs
+mkdir -Force sdrpp_windows_x64/SoapySDR/modules0.8
+
+if (Test-Path "$PothosRoot/lib/SoapySDR/modules0.8") {
+    cp "$PothosRoot/lib/SoapySDR/modules0.8/*.dll" `
+       sdrpp_windows_x64/SoapySDR/modules0.8/ `
+       -ErrorAction SilentlyContinue
+}
+
+# Runtime deps for Pothos Soapy plugins
+cp "$PothosRoot/bin/*.dll" `
+   sdrpp_windows_x64/ `
+   -ErrorAction SilentlyContinue
+
+# Launcher
+@'
+@echo off
+setlocal
+set PATH=%~dp0;%PATH%
+set SOAPY_SDR_PLUGIN_PATH=%~dp0SoapySDR\modules0.8
+start "" "%~dp0sdrpp.exe"
+'@ | Out-File -Encoding ASCII sdrpp_windows_x64/start_sdrpp.bat
+
+# Debug launcher
+@'
+@echo off
+setlocal
+set PATH=%~dp0;%PATH%
+set SOAPY_SDR_PLUGIN_PATH=%~dp0SoapySDR\modules0.8
+set SOAPY_SDR_LOG_LEVEL=TRACE
+echo === SoapySDR info ===
+"%~dp0SoapySDRUtil.exe" --info
+echo.
+echo === SoapySDR find ===
+"%~dp0SoapySDRUtil.exe" --find
+echo.
+echo === SDR++ ===
+"%~dp0sdrpp.exe" -c
+pause
+'@ | Out-File -Encoding ASCII sdrpp_windows_x64/start_sdrpp_debug.bat
 
 # Copy sink modules
 cp $build_dir/sink_modules/audio_sink/Release/audio_sink.dll sdrpp_windows_x64/modules/
