@@ -619,7 +619,7 @@ private:
             const std::string displayName =
                 setting.info.name.empty() ? setting.info.key : setting.info.name;
 
-            maxLabelWidth = std::max(
+            maxLabelWidth = (std::max)(
                 maxLabelWidth,
                 ImGui::CalcTextSize(displayName.c_str()).x);
         }
