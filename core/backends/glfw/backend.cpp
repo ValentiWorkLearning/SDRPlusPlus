@@ -8,6 +8,8 @@
 #include <version.h>
 #include <core.h>
 #include <filesystem>
+#include <chrono>
+#include <thread>
 #include <stb_image.h>
 #include <stb_image_resize.h>
 #include <gui/gui.h>
@@ -91,6 +93,7 @@ namespace backend {
         if (window == NULL)
             return 1;
         glfwMakeContextCurrent(window);
+        glfwSwapInterval(false); // Disable vsync temporarily to improve performance
     #else
         const char* glsl_version = "#version 120";
         monitor = NULL;
@@ -171,11 +174,13 @@ namespace backend {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGuiIO& io = ImGui::GetIO();
-        (void)io;
         io.IniFilename = NULL;
+        io.ConfigFlags |= ImGuiConfigFlags_EnablePowerSavingMode;
+        ImGui::SetMaxWaitBeforeNextFrame(1.0 / 30.0);
 
         // Setup Platform/Renderer bindings
         ImGui_ImplGlfw_InitForOpenGL(window, true);
+        
 
         if (!ImGui_ImplOpenGL3_Init(glsl_version)) {
             // If init fail, try to fall back on GLSL 1.2
@@ -218,7 +223,6 @@ namespace backend {
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-        glfwSwapInterval(vsync);
         glfwSwapBuffers(window);
     }
 
@@ -233,8 +237,13 @@ namespace backend {
     }
 
     int renderLoop() {
+        constexpr auto targetFrameDuration = std::chrono::milliseconds(33);
+        auto nextFrame = std::chrono::steady_clock::now();
+
         // Main loop
         while (!glfwWindowShouldClose(window)) {
+
+            ImGui_ImplGlfw_WaitForEvent();
             glfwPollEvents();
 
             beginFrame();
@@ -289,6 +298,13 @@ namespace backend {
             }
 
             render();
+
+            nextFrame += targetFrameDuration;
+            std::this_thread::sleep_until(nextFrame);
+
+            if (std::chrono::steady_clock::now() > nextFrame + targetFrameDuration) {
+                nextFrame = std::chrono::steady_clock::now();
+            }
         }
 
         return 0;

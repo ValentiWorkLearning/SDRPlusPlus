@@ -4,6 +4,8 @@
 #include <gui/file_dialogs.h>
 #include <core.h>
 
+#include <utils/threading.h>
+
 FolderSelect::FolderSelect(std::string defaultPath) {
     root = (std::string)core::args["root"];
     setPath(defaultPath);
@@ -63,6 +65,7 @@ bool FolderSelect::pathIsValid() {
 }
 
 void FolderSelect::worker() {
+    utils::setCurrentThreadName("FolderSelect Worker");
     auto fold = pfd::select_folder("Select Folder", pathValid ? std::filesystem::path(expandString(path)).parent_path().string() : "");
     std::string res = fold.result();
 

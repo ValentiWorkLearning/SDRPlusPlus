@@ -279,13 +279,10 @@ Make sure to install portaudio as it'll be needed later.
 An example install command would be:
 
 ```sh
-brew install libusb fftw glfw airspy airspyhf portaudio hackrf rtl-sdr libbladerf codec2 zstd
-pip3 install mako
+brew install libusb fftw glfw airspy airspyhf portaudio hackrf rtl-sdr libbladerf codec2 zstd volk
+pip3 install mako --break-system-packages
 ```
-
-### Install volk
-
-You will need to install volk from source. Follow the instructions on their repository. On M1 there are a few more manipulations needed.
+This was tested on Apple M1 Air laptop with macOs Tahoe 26.2.
 
 ## Build
 
@@ -294,10 +291,8 @@ You will need a few special cmake argument on top of the linux ones. You will ne
 Here is an example of build commands that will build almost all modules at the time of writing. You can always check the CI scripts for the latest arguments just in case but this should work. From the top of the SDRPlusPlus directory:
 
 ```sh
-mkdir build
-cd build
-cmake .. -DOPT_BUILD_SOAPY_SOURCE=OFF -DOPT_BUILD_BLADERF_SOURCE=ON -DOPT_BUILD_AUDIO_SOURCE=OFF -DOPT_BUILD_AUDIO_SINK=OFF -DOPT_BUILD_PORTAUDIO_SINK=ON -DOPT_BUILD_NEW_PORTAUDIO_SINK=ON -DOPT_BUILD_M17_DECODER=ON -DUSE_BUNDLE_DEFAULTS=ON -DCMAKE_BUILD_TYPE=Release
-make -j<N>
+cmake -B build -S . -DOPT_BUILD_SOAPY_SOURCE=OFF -DOPT_BUILD_BLADERF_SOURCE=ON -DOPT_BUILD_AUDIO_SOURCE=OFF -DOPT_BUILD_AUDIO_SINK=OFF -DOPT_BUILD_PORTAUDIO_SINK=ON -DOPT_BUILD_NEW_PORTAUDIO_SINK=ON -DOPT_BUILD_M17_DECODER=ON -DUSE_BUNDLE_DEFAULTS=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel=8
 ```
 
 ## Create bundle and install

@@ -3,6 +3,8 @@
 #include <utils/flog.h>
 #include <stdexcept>
 
+#include <utils/threading.h>
+
 namespace net {
 
 #ifdef _WIN32
@@ -176,6 +178,7 @@ namespace net {
     }
 
     void ConnClass::readWorker() {
+        utils::setCurrentThreadName("Net Read Worker");
         while (true) {
             // Wait for wakeup and exit if it's for terminating the thread
             std::unique_lock lck(readQueueMtx);
@@ -202,6 +205,7 @@ namespace net {
     }
 
     void ConnClass::writeWorker() {
+        utils::setCurrentThreadName("Net Write Worker");
         while (true) {
             // Wait for wakeup and exit if it's for terminating the thread
             std::unique_lock lck(writeQueueMtx);
@@ -300,6 +304,7 @@ namespace net {
     }
 
     void ListenerClass::worker() {
+        utils::setCurrentThreadName("Net Accept Worker");
         while (true) {
             // Wait for wakeup and exit if it's for terminating the thread
             std::unique_lock lck(acceptQueueMtx);
