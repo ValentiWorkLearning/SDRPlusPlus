@@ -222,7 +222,7 @@ private:
         bandwidths.define(-1, "Auto", -1);
         for (int i = 1; i <= 100; i++) {
             char buf[128];
-            sprintf(buf, "%d MHz", i);
+            snprintf(buf, sizeof(buf), "%d MHz", i);
             bandwidths.define(i, buf, i);
         }
 

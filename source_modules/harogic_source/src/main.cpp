@@ -81,7 +81,7 @@ private:
 
             // Create serial string
             char serial[64];
-            sprintf(serial, "%" PRIX64, binfo.DeviceInfo.DeviceUID);
+            snprintf(serial, sizeof(serial), "%" PRIX64, binfo.DeviceInfo.DeviceUID);
             
             // Add the device to the list
             devices.define(serial, serial, i);
@@ -133,7 +133,7 @@ private:
         for (int i = 0; i < 8; i++) {
             double sr = profile.NativeIQSampleRate_SPS / (double)(1 << i);
             char buf[128];
-            sprintf(buf, "%.02fMHz", sr / 1e6);
+            snprintf(buf, sizeof(buf), "%.02fMHz", sr / 1e6);
             samplerates.define(1 << i, buf, sr);
         }
 

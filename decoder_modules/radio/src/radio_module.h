@@ -61,7 +61,7 @@ public:
         for (int i = 0; i < dsp::noise_reduction::_CTCSS_TONE_COUNT; i++) {
             float tone = dsp::noise_reduction::CTCSS_TONES[i];
             char buf[64];
-            sprintf(buf, "%.1fHz", tone);
+            snprintf(buf, sizeof(buf), "%.1fHz", tone);
             ctcssTones.define((int)round(tone) * 10, buf, (dsp::noise_reduction::CTCSSTone)i);
         }
         ctcssTones.define(-1, "Any", dsp::noise_reduction::CTCSS_TONE_ANY);
@@ -280,6 +280,17 @@ private:
                     }
                 }
             }
+            [[fallthrough]];
+            case SQUELCH_MODE_OFF:
+            [[fallthrough]];
+            case SQUELCH_MODE_SNR:
+            [[fallthrough]];
+            case SQUELCH_MODE_CTCSS_DECODE:
+            [[fallthrough]];
+            case SQUELCH_MODE_DCS_MUTE:
+            [[fallthrough]];
+            case SQUELCH_MODE_DCS_DECODE:
+                break;
         }
 
         // Noise blanker
@@ -357,6 +368,17 @@ private:
                 }
             }
             break;
+        [[fallthrough]];
+            case SQUELCH_MODE_OFF:
+            [[fallthrough]];
+            case SQUELCH_MODE_SNR:
+            [[fallthrough]];
+            case SQUELCH_MODE_CTCSS_DECODE:
+            [[fallthrough]];
+            case SQUELCH_MODE_DCS_MUTE:
+            [[fallthrough]];
+            case SQUELCH_MODE_DCS_DECODE:
+                break;
         }
 
         if (!_this->enabled) { style::endDisabled(); }
