@@ -279,18 +279,14 @@ private:
                         _this->setCTCSSTone(_this->ctcssTones[_this->ctcssToneId]);
                     }
                 }
-            }
-            [[fallthrough]];
+                break;
             case SQUELCH_MODE_OFF:
-            [[fallthrough]];
             case SQUELCH_MODE_SNR:
-            [[fallthrough]];
             case SQUELCH_MODE_CTCSS_DECODE:
-            [[fallthrough]];
             case SQUELCH_MODE_DCS_MUTE:
-            [[fallthrough]];
             case SQUELCH_MODE_DCS_DECODE:
                 break;
+            }
         }
 
         // Noise blanker
@@ -368,17 +364,13 @@ private:
                 }
             }
             break;
-        [[fallthrough]];
-            case SQUELCH_MODE_OFF:
-            [[fallthrough]];
-            case SQUELCH_MODE_SNR:
-            [[fallthrough]];
-            case SQUELCH_MODE_CTCSS_DECODE:
-            [[fallthrough]];
-            case SQUELCH_MODE_DCS_MUTE:
-            [[fallthrough]];
-            case SQUELCH_MODE_DCS_DECODE:
-                break;
+
+        case SQUELCH_MODE_OFF:
+        case SQUELCH_MODE_SNR:
+        case SQUELCH_MODE_DCS_MUTE:
+        case SQUELCH_MODE_DCS_DECODE:
+        case SQUELCH_MODE_POWER:
+            break;
         }
 
         if (!_this->enabled) { style::endDisabled(); }
