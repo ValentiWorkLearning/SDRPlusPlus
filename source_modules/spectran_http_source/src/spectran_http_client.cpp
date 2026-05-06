@@ -2,6 +2,8 @@
 #include <utils/flog.h>
 #include <inttypes.h>
 
+#include <utils/threading.h>
+
 SpectranHTTPClient::SpectranHTTPClient(std::string host, int port, dsp::stream<dsp::complex_t>* stream) {
     this->stream = stream;
 
@@ -77,6 +79,7 @@ void SpectranHTTPClient::setCenterFrequency(uint64_t freq) {
 }
 
 void SpectranHTTPClient::worker() {
+    utils::setCurrentThreadName("Spectran HTTP Worker");
     while (sock->isOpen()) {
         // Get chunk header
         net::http::ChunkHeader chdr;

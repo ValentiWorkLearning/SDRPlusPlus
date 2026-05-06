@@ -8,6 +8,8 @@
 #include <gui/smgui.h>
 #include <lime/LimeSuite.h>
 
+#include <utils/threading.h>
+
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
@@ -361,7 +363,6 @@ private:
         LMS_StartStream(&_this->devStream);
         _this->workerThread = std::thread(&LimeSDRSourceModule::worker, _this);
 
-
         _this->running = true;
         flog::info("LimeSDRSourceModule '{0}': Start!", _this->name);
     }
@@ -480,6 +481,7 @@ private:
     }
 
     void worker() {
+        utils::setCurrentThreadName("LimeSDR Worker");
         int sampCount = sampleRate / 200;
         lms_stream_meta_t meta;
         while (streamRunning) {

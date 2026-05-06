@@ -8,6 +8,8 @@
 #include <atomic>
 #include <sddc.h>
 
+#include <utils/threading.h>
+
 SDRPP_MOD_INFO{
     /* Name:            */ "sddc_source",
     /* Description:     */ "SDDC Source Module",
@@ -393,6 +395,7 @@ private:
     }
 
     void worker() {
+        utils::setCurrentThreadName("SDDC Worker");
         // // Select different processing depending on the mode
         // if (port == PORT_RF && sampleRate >= 50e6) {
         //     while (run) {
