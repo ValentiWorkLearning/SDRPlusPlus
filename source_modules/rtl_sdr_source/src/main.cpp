@@ -133,10 +133,10 @@ public:
 
             // Build name
             if (venBuf[0] && prodBuf[0]) {
-                sprintf(buf, "%s %s [%s]##%d", venBuf, prodBuf, (!snErr && snBuf[0]) ? snBuf : "No Serial", i);
+                snprintf(buf, sizeof(buf), "%s %s [%s]##%d", venBuf, prodBuf, (!snErr && snBuf[0]) ? snBuf : "No Serial", i);
             }
             else {
-                sprintf(buf, "%s [%s]##%d", devName, (!snErr && snBuf[0]) ? snBuf : "No Serial", i);
+                snprintf(buf, sizeof(buf), "%s [%s]##%d", devName, (!snErr && snBuf[0]) ? snBuf : "No Serial", i);
             }
 
             // Add device to list
@@ -263,13 +263,13 @@ private:
     std::string getBandwdithScaled(double bw) {
         char buf[1024];
         if (bw >= 1000000.0) {
-            sprintf(buf, "%.1lfMHz", bw / 1000000.0);
+            snprintf(buf, sizeof(buf), "%.1lfMHz", bw / 1000000.0);
         }
         else if (bw >= 1000.0) {
-            sprintf(buf, "%.1lfKHz", bw / 1000.0);
+            snprintf(buf, sizeof(buf), "%.1lfKHz", bw / 1000.0);
         }
         else {
-            sprintf(buf, "%.1lfHz", bw);
+            snprintf(buf, sizeof(buf), "%.1lfHz", bw);
         }
         return std::string(buf);
     }
@@ -542,7 +542,7 @@ private:
     }
 
     void updateGainTxt() {
-        sprintf(dbTxt, "%.1f dB", (float)gainList[gainId] / 10.0f);
+        snprintf(dbTxt, sizeof(dbTxt), "%.1f dB", (float)gainList[gainId] / 10.0f);
     }
 
     std::string name;

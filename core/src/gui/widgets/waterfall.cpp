@@ -54,19 +54,19 @@ inline double findBestRange(double bandwidth, int maxSteps) {
     return 50000000.0;
 }
 
-inline void printAndScale(double freq, char* buf) {
+inline void printAndScale(double freq, char* buf, size_t buf_len) {
     double freqAbs = fabs(freq);
     if (freqAbs < 1000) {
-        sprintf(buf, "%.6g", freq);
+        snprintf(buf, buf_len, "%.6g", freq);
     }
     else if (freqAbs < 1000000) {
-        sprintf(buf, "%.6lgK", freq / 1000.0);
+        snprintf(buf, buf_len, "%.6lgK", freq / 1000.0);
     }
     else if (freqAbs < 1000000000) {
-        sprintf(buf, "%.6lgM", freq / 1000000.0);
+        snprintf(buf, buf_len, "%.6lgM", freq / 1000000.0);
     }
     else if (freqAbs < 1000000000000) {
-        sprintf(buf, "%.6lgG", freq / 1000000000.0);
+        snprintf(buf, buf_len, "%.6lgG", freq / 1000000000.0);
     }
 }
 
@@ -156,7 +156,7 @@ namespace ImGui {
             window->DrawList->AddLine(ImVec2(fftAreaMin.x, roundf(yPos)),
                                       ImVec2(fftAreaMax.x, roundf(yPos)),
                                       IM_COL32(50, 50, 50, 255), style::uiScale);
-            sprintf(buf, "%d", (int)line);
+            snprintf(buf, sizeof(buf), "%d", (int)line);
             ImVec2 txtSz = ImGui::CalcTextSize(buf);
             window->DrawList->AddText(ImVec2(fftAreaMin.x - txtSz.x - textVOffset, roundf(yPos - (txtSz.y / 2.0))), text, buf);
         }
@@ -173,7 +173,7 @@ namespace ImGui {
             window->DrawList->AddLine(ImVec2(roundf(xPos), fftAreaMax.y),
                                       ImVec2(roundf(xPos), fftAreaMax.y + scaleVOfsset),
                                       text, style::uiScale);
-            printAndScale(freq, buf);
+            printAndScale(freq, buf, sizeof(buf));
             ImVec2 txtSz = ImGui::CalcTextSize(buf);
             window->DrawList->AddText(ImVec2(roundf(xPos - (txtSz.x / 2.0)), fftAreaMax.y + txtSz.y), text, buf);
         }
@@ -530,9 +530,9 @@ namespace ImGui {
 
                     if (ImGui::GetIO().KeyCtrl) {
                         ImGui::Separator();
-                        printAndScale(_vfo->generalOffset + centerFreq, buf);
+                        printAndScale(_vfo->generalOffset + centerFreq, buf, sizeof(buf));
                         ImGui::Text("Frequency: %sHz", buf);
-                        printAndScale(_vfo->bandwidth, buf);
+                        printAndScale(_vfo->bandwidth, buf, sizeof(buf));
                         ImGui::Text("Bandwidth: %sHz", buf);
                         ImGui::Text("Bandwidth Locked: %s", _vfo->bandwidthLocked ? "Yes" : "No");
 

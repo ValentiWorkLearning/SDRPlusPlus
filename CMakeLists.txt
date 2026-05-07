@@ -99,6 +99,11 @@ else()
         set(SDRPP_COMPILER_FLAGS -O3 -std=c++17)
     endif ()
 endif()
+
+if(APPLE)
+    add_compile_definitions(GL_SILENCE_DEPRECATION)
+endif()
+
 set(SDRPP_MODULE_COMPILER_FLAGS ${SDRPP_COMPILER_FLAGS})
 
 # Set a default install prefix
