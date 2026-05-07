@@ -492,7 +492,7 @@ private:
         while (_this->running) {
             const ssize_t nbytes = iio_buffer_refill(rxbuf);
             if (nbytes < 0) {
-                flog::error("iio_buffer_refill failed: {}", nbytes);
+                flog::error("iio_buffer_refill failed: {}", (int)nbytes);
                 break;
             }
 
