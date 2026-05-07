@@ -256,4 +256,16 @@ namespace flog {
         snprintf(buf, sizeof(buf), "0x%p", value);
         return buf;
     }
+
+    std::string __toString__(long value) {
+        return std::to_string(value);
+    }
+
+    std::string __toString__(unsigned long value) {
+        return std::to_string(value);
+    }
+
+    std::string __toString__(ssize_t value) {
+        return std::to_string(value);
+    }
 }
