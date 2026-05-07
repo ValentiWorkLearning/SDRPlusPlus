@@ -29,6 +29,95 @@ jobs:
         - name: Install PothosSDR
           run: mkdir "C:/Program Files/PothosSDR" ; 7z x ${{runner.workspace}}/pothos.exe -o"C:/Program Files/PothosSDR/"
 
+        - name: Download ADI libiio v0.26 for Windows for the proper PlutoPlus Ethernet discovery
+          shell: pwsh
+          run: |
+            $ErrorActionPreference = "Stop"
+
+            $release = Invoke-RestMethod `
+              -Uri "https://api.github.com/repos/analogdevicesinc/libiio/releases/tags/v0.26"
+
+            $asset = $release.assets |
+              Where-Object {
+                $_.name -match "Windows" -and
+                $_.name -match "(amd64|x86_64|64)" -and
+                $_.name -match "\.(zip|tar\.gz)$"
+              } |
+              Select-Object -First 1
+
+            if (-not $asset) {
+              Write-Host "Available assets:"
+              $release.assets | ForEach-Object { Write-Host $_.name }
+              throw "Could not find Windows x64 libiio asset in v0.26 release"
+            }
+
+            Write-Host "Downloading $($asset.name)"
+            Invoke-WebRequest -Uri $asset.browser_download_url `
+              -OutFile "${{ runner.workspace }}/libiio-v0.26-windows"
+
+        - name: Extract ADI libiio v0.26
+          shell: pwsh
+          working-directory: ${{ runner.workspace }}
+          run: |
+            $ErrorActionPreference = "Stop"
+
+            New-Item -ItemType Directory -Force -Path "libiio-v0.26" | Out-Null
+
+            # GitHub asset may be .zip or .tar.gz depending on release packaging
+            $file = "${{ runner.workspace }}/libiio-v0.26-windows"
+
+            try {
+              7z x $file -olibiio-v0.26
+            } catch {
+              throw "Failed to extract libiio archive"
+            }
+
+            Get-ChildItem -Recurse libiio-v0.26 | Select-Object FullName
+
+        - name: Patch PothosSDR with ADI libiio v0.26 runtime
+          shell: pwsh
+          working-directory: ${{ runner.workspace }}
+          run: |
+            $ErrorActionPreference = "Stop"
+
+            $src = Get-ChildItem -Recurse "libiio-v0.26" -Directory |
+              Where-Object {
+                Test-Path (Join-Path $_.FullName "libiio.dll")
+              } |
+              Select-Object -First 1
+
+            if (-not $src) {
+              $src = Get-ChildItem -Recurse "libiio-v0.26" -Filter "libiio.dll" |
+                Select-Object -First 1 |
+                ForEach-Object { $_.Directory }
+            }
+
+            if (-not $src) {
+              throw "libiio.dll not found in extracted ADI package"
+            }
+
+            Write-Host "Using libiio runtime dir: $($src.FullName)"
+
+            $pothosBin = "C:/Program Files/PothosSDR/bin"
+
+            $dlls = @(
+              "libiio.dll",
+              "libiio-sharp.dll",
+              "libserialport-0.dll",
+              "libusb-1.0.dll",
+              "libxml2.dll"
+            )
+
+            foreach ($dll in $dlls) {
+              $found = Get-ChildItem -Recurse "libiio-v0.26" -Filter $dll | Select-Object -First 1
+              if ($found) {
+                Copy-Item $found.FullName $pothosBin -Force
+                Write-Host "Patched PothosSDR with $dll"
+              } else {
+                Write-Host "Warning: $dll not found in ADI package"
+              }
+            }
+
         - name: Download libusb
           run: Invoke-WebRequest -Uri "https://github.com/libusb/libusb/releases/download/v1.0.23/libusb-1.0.23.7z" -OutFile ${{runner.workspace}}/libusb.7z
 
