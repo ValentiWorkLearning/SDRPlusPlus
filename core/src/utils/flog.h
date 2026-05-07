@@ -28,7 +28,6 @@ namespace flog {
     std::string __toString__(uint64_t value);
     std::string __toString__(long value);
     std::string __toString__(unsigned long value);
-    std::string __toString__(ssize_t value);
     std::string __toString__(float value);
     std::string __toString__(double value);
     std::string __toString__(const char* value);

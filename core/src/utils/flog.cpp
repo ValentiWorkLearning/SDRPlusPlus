@@ -264,8 +264,4 @@ namespace flog {
     std::string __toString__(unsigned long value) {
         return std::to_string(value);
     }
-
-    std::string __toString__(ssize_t value) {
-        return std::to_string(value);
-    }
 }
