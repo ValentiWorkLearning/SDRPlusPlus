@@ -150,6 +150,7 @@ namespace ImGui {
 
         float* acquireLatestFFT(int& width);
         void releaseLatestFFT();
+        void uploadPendingWaterfallRows();
 
         bool centerFreqMoved = false;
         bool vfoFreqChanged = false;
@@ -323,5 +324,19 @@ namespace ImGui {
         ImVec2 mouseDownPos;
 
         ImVec2 lastMousePos;
+
+        struct PendingRow
+        {
+            int row;
+            std::vector<uint32_t> pixels;
+        };
+
+        bool textureAllocated = false;
+        int wfHeadRow = 0;
+
+        std::mutex pendingRowsMtx;
+        std::vector<PendingRow> pendingRows;
+
+        bool waterfallFullUpdate = true;
     };
 };

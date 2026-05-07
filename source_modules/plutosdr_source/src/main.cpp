@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <regex>
 
+#include <utils/threading.h>
+
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
 SDRPP_MOD_INFO{
@@ -445,6 +447,9 @@ private:
     }
 
     static void worker(void* ctx) {
+
+        utils::setCurrentThreadName("PlutoSDR Worker");
+
         PlutoSDRSourceModule* _this = static_cast<PlutoSDRSourceModule*>(ctx);
 
         static constexpr size_t IIO_BUFFER_SAMPLES = 1 << 16; // 65536 complex samples

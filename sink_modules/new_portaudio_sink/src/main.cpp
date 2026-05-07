@@ -11,10 +11,15 @@
 #include <algorithm>
 #include <core.h>
 
-#define CONCAT(a, b) ((std::string(a) + b).c_str())
+#include <atomic>
+#include <chrono>
+#include <thread>
+#include <vector>
+#include <queue>
+#include <mutex>
+#include <cstring>
 
-#define BLOCK_SIZE_DIVIDER 60
-#define AUDIO_LATENCY      1.0 / 60.0
+#define AUDIO_LATENCY 0.1
 
 SDRPP_MOD_INFO{
     /* Name:            */ "new_portaudio_sink",
@@ -29,18 +34,18 @@ ConfigManager config;
 class AudioSink : SinkManager::Sink {
 public:
     struct AudioDevice_t {
-        const PaDeviceInfo* deviceInfo;
-        const PaHostApiInfo* hostApiInfo;
-        PaDeviceIndex id;
-        int defaultSrId;
-        PaStreamParameters outputParams;
+        const PaDeviceInfo* deviceInfo = nullptr;
+        const PaHostApiInfo* hostApiInfo = nullptr;
+        PaDeviceIndex id = paNoDevice;
+        int defaultSrId = 0;
+        PaStreamParameters outputParams{};
         std::vector<double> sampleRates;
         std::string sampleRatesTxt;
     };
 
     AudioSink(SinkManager::Stream* stream, std::string streamName) {
         _stream = stream;
-        _streamName = streamName;
+        _streamName = std::move(streamName);
 
         // Create config if it doesn't exist
         config.acquire();
@@ -71,69 +76,95 @@ public:
     }
 
     void start() {
-        if (running || selectedDevName.empty()) { return; }
+        if (running || selectedDevName.empty())
+            return;
 
-        // Get device and samplerate
-        AudioDevice_t& dev = devices[deviceNames[devId]];
-        double sampleRate = dev.sampleRates[srId];
-        int blockSize = sampleRate / BLOCK_SIZE_DIVIDER;
+        auto& dev = devices[deviceNames[devId]];
 
-        // Set the SDR++ stream sample rate
+        const double sampleRate = dev.sampleRates[srId];
+        const int blockSize = 2048;
+
+        currentSampleRate = sampleRate;
+        currentFrameCount = blockSize;
+
         _stream->setSampleRate(sampleRate);
-
-        // Update the block size on the packer
         packer.setSampleCount(blockSize);
 
-        // Clear read stop signals
+        stereo = dev.deviceInfo->maxOutputChannels > 1;
+
+        resetStats();
+        clearQueue();
+
         packer.out.clearReadStop();
         s2m.out.clearReadStop();
 
-        // Open the stream
-        PaError err;
-        if (dev.deviceInfo->maxOutputChannels == 1) {
-            packer.start();
+        packer.start();
+        if (!stereo)
             s2m.start();
-            stereo = false;
-            err = Pa_OpenStream(&devStream, NULL, &dev.outputParams, sampleRate, blockSize, paNoFlag, _mono_cb, this);
+
+        workerRunning = true;
+        workerThread = std::thread(&AudioSink::workerLoop, this);
+
+        PaError err;
+
+        if (stereo) {
+            err = Pa_OpenStream(
+                &devStream,
+                nullptr,
+                &dev.outputParams,
+                sampleRate,
+                blockSize,
+                paNoFlag,
+                _stereo_cb,
+                this);
         }
         else {
-            packer.start();
-            stereo = true;
-            err = Pa_OpenStream(&devStream, NULL, &dev.outputParams, sampleRate, blockSize, paNoFlag, _stereo_cb, this);
+            err = Pa_OpenStream(
+                &devStream,
+                nullptr,
+                &dev.outputParams,
+                sampleRate,
+                blockSize,
+                paNoFlag,
+                _mono_cb,
+                this);
         }
 
-        // In case of error, abort
-        if (err) {
-            flog::error("PortAudio error {0}: {1}", err, Pa_GetErrorText(err));
+        if (err != paNoError) {
+            flog::error("Pa_OpenStream failed: {}", Pa_GetErrorText(err));
+            stopWorkerAndDsp();
             return;
         }
 
-        flog::info("Starting PortAudio stream at {0} S/s", sampleRate);
-
         // Start stream
-        Pa_StartStream(devStream);
+        err = Pa_StartStream(devStream);
+        if (err != paNoError) {
+            flog::error("Pa_StartStream failed: {}", Pa_GetErrorText(err));
+            Pa_CloseStream(devStream);
+            devStream = nullptr;
+            stopWorkerAndDsp();
+            return;
+        }
+
+        flog::info("Audio started: {} Hz block={} stereo={}",
+                   sampleRate, blockSize, stereo);
 
         running = true;
     }
 
     void stop() {
-        if (!running || selectedDevName.empty()) { return; }
-
-        // Send stop signal to the streams
-        packer.out.stopReader();
-        s2m.out.stopReader();
-
-        // Stop DSP
-        packer.stop();
-        s2m.stop();
-
-        // Stop stream
-        Pa_AbortStream(devStream);
-
-        // Close the stream
-        Pa_CloseStream(devStream);
+        if (!running && !workerRunning.load())
+            return;
 
         running = false;
+
+        if (devStream) {
+            Pa_AbortStream(devStream);
+            Pa_CloseStream(devStream);
+            devStream = nullptr;
+        }
+
+        stopWorkerAndDsp();
     }
 
     void menuHandler() {
@@ -163,33 +194,266 @@ public:
                 config.release(true);
             }
         }
+
+        ImGui::Separator();
+        ImGui::Text("Audio Diagnostics");
+
+        ImGui::Text("Callbacks: %llu",
+                    (unsigned long long)callbackCount.load());
+
+        ImGui::Text("PA Underflows: %llu",
+                    (unsigned long long)paUnderflows.load());
+
+        ImGui::Text("PA Overflows: %llu",
+                    (unsigned long long)paOverflows.load());
+
+        ImGui::Text("Queue Underruns: %llu",
+                    (unsigned long long)queueUnderruns.load());
+
+        ImGui::Text("Queue Overruns: %llu",
+                    (unsigned long long)queueOverruns.load());
+
+        ImGui::Text("Queue Fill: %zu blocks", queueSize());
+
+        ImGui::Text("Late Callbacks: %llu",
+                    (unsigned long long)lateCallbacks.load());
+
+        ImGui::Text("Last CB delta: %.2f ms",
+                    lastCallbackDeltaMs.load());
+
+        ImGui::Text("Max CB delta: %.2f ms",
+                    maxCallbackDeltaMs.load());
+
+        double expected =
+            1000.0 * (double)currentFrameCount / currentSampleRate;
+
+        ImGui::Text("Expected period: %.2f ms", expected);
+
+        if (ImGui::Button("Reset Stats"))
+            resetStats();
     }
 
     int devId = 0;
     int srId = 0;
-    bool stereo = false;
 
 private:
-    static void playStateChangeHandler(bool newState, void* ctx) {
-        AudioSink* _this = (AudioSink*)ctx;
+    struct AudioBlock {
+        std::vector<float> data;
+    };
 
-        // Wake up reader to send nulls instead of data in preparation for shutoff
+    static void playStateChangeHandler(bool newState, void* ctx) {
+        auto* self = static_cast<AudioSink*>(ctx);
+
         if (newState) {
-            if (_this->stereo) {
-                _this->packer.out.stopReader();
-            }
-            else {
-                _this->s2m.out.stopReader();
-            }
+            self->packer.out.clearReadStop();
+            self->s2m.out.clearReadStop();
         }
         else {
-            if (_this->stereo) {
-                _this->packer.out.clearReadStop();
+            self->packer.out.stopReader();
+            self->s2m.out.stopReader();
+            self->clearQueue();
+        }
+    }
+
+    void stopWorkerAndDsp() {
+        workerRunning = false;
+
+        packer.out.stopReader();
+        s2m.out.stopReader();
+
+        if (workerThread.joinable())
+            workerThread.join();
+
+        if (!stereo)
+            s2m.stop();
+
+        packer.stop();
+
+        clearQueue();
+    }
+
+    void workerLoop() {
+        while (workerRunning.load()) {
+
+            if (!gui::mainWindow.isPlaying()) {
+                std::this_thread::sleep_for(
+                    std::chrono::milliseconds(2));
+                continue;
+            }
+
+            AudioBlock blk;
+
+            if (stereo) {
+                packer.out.read();
+
+                if (!packer.out.readBuf) {
+                    std::this_thread::sleep_for(
+                        std::chrono::milliseconds(1));
+                    continue;
+                }
+
+                blk.data.resize(currentFrameCount * 2);
+
+                std::memcpy(
+                    blk.data.data(),
+                    packer.out.readBuf,
+                    blk.data.size() * sizeof(float));
+
+                packer.out.flush();
             }
             else {
-                _this->s2m.out.clearReadStop();
+                s2m.out.read();
+
+                if (!s2m.out.readBuf) {
+                    std::this_thread::sleep_for(
+                        std::chrono::milliseconds(1));
+                    continue;
+                }
+
+                blk.data.resize(currentFrameCount);
+
+                std::memcpy(
+                    blk.data.data(),
+                    s2m.out.readBuf,
+                    blk.data.size() * sizeof(float));
+
+                s2m.out.flush();
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(queueMtx);
+                audioQueue.push(std::move(blk));
             }
         }
+    }
+
+    static int _mono_cb(
+        const void*,
+        void* output,
+        unsigned long frameCount,
+        const PaStreamCallbackTimeInfo*,
+        PaStreamCallbackFlags statusFlags,
+        void* userData) {
+        auto* self = static_cast<AudioSink*>(userData);
+
+        self->updateCallbackTiming(frameCount);
+
+        if (statusFlags & paOutputUnderflow)
+            self->paUnderflows++;
+
+        if (statusFlags & paOutputOverflow)
+            self->paOverflows++;
+
+        float* out = static_cast<float*>(output);
+
+        self->popQueue(out, frameCount);
+
+        return paContinue;
+    }
+
+    static int _stereo_cb(
+        const void*,
+        void* output,
+        unsigned long frameCount,
+        const PaStreamCallbackTimeInfo*,
+        PaStreamCallbackFlags statusFlags,
+        void* userData) {
+        auto* self = static_cast<AudioSink*>(userData);
+
+        self->updateCallbackTiming(frameCount);
+
+        if (statusFlags & paOutputUnderflow)
+            self->paUnderflows++;
+
+        if (statusFlags & paOutputOverflow)
+            self->paOverflows++;
+
+        float* out = static_cast<float*>(output);
+
+        self->popQueue(out, frameCount * 2);
+
+        return paContinue;
+    }
+
+    void popQueue(float* dst, size_t samplesNeeded) {
+        std::lock_guard<std::mutex> lock(queueMtx);
+
+        if (audioQueue.empty()) {
+            std::memset(dst, 0, samplesNeeded * sizeof(float));
+            queueUnderruns++;
+            return;
+        }
+
+        auto& blk = audioQueue.front();
+
+        if (blk.data.size() < samplesNeeded) {
+            std::memset(dst, 0, samplesNeeded * sizeof(float));
+            queueUnderruns++;
+            audioQueue.pop();
+            return;
+        }
+
+        std::memcpy(
+            dst,
+            blk.data.data(),
+            samplesNeeded * sizeof(float));
+
+        audioQueue.pop();
+    }
+
+    void clearQueue() {
+        std::lock_guard<std::mutex> lock(queueMtx);
+
+        while (!audioQueue.empty())
+            audioQueue.pop();
+    }
+
+    size_t queueSize() {
+        std::lock_guard<std::mutex> lock(queueMtx);
+        return audioQueue.size();
+    }
+
+    void resetStats() {
+        paUnderflows = 0;
+        paOverflows = 0;
+        queueUnderruns = 0;
+        queueOverruns = 0;
+        lateCallbacks = 0;
+        callbackCount = 0;
+        lastCallbackDeltaMs = 0;
+        maxCallbackDeltaMs = 0;
+        cbHasLastTs = false;
+    }
+
+    void updateCallbackTiming(unsigned long frameCount) {
+        using namespace std::chrono;
+
+        auto now = steady_clock::now();
+
+        if (cbHasLastTs) {
+            double dtMs =
+                duration_cast<
+                    duration<double, std::milli>>(
+                    now - cbLastTs)
+                    .count();
+
+            lastCallbackDeltaMs = dtMs;
+
+            if (dtMs > maxCallbackDeltaMs.load())
+                maxCallbackDeltaMs = dtMs;
+
+            double expected =
+                1000.0 *
+                (double)frameCount /
+                currentSampleRate;
+
+            if (dtMs > expected * 1.5)
+                lateCallbacks++;
+        }
+
+        cbLastTs = now;
+        cbHasLastTs = true;
+        callbackCount++;
     }
 
     void refreshDevices() {
@@ -200,19 +464,23 @@ private:
 
         // Get number of devices
         int devCount = Pa_GetDeviceCount();
-        PaStreamParameters outputParams;
-        char buffer[128];
+        constexpr size_t bufSize = 256;
+        char buf[bufSize];
 
         for (int i = 0; i < devCount; i++) {
             AudioDevice_t dev;
 
             // Get device info
             dev.deviceInfo = Pa_GetDeviceInfo(i);
-            dev.hostApiInfo = Pa_GetHostApiInfo(dev.deviceInfo->hostApi);
+            if (!dev.deviceInfo || dev.deviceInfo->maxOutputChannels == 0){
+                continue;
+            }
+
+            dev.hostApiInfo =
+                Pa_GetHostApiInfo(dev.deviceInfo->hostApi);
+
             dev.id = i;
 
-            // Check if device is usable
-            if (dev.deviceInfo->maxOutputChannels == 0) { continue; }
 #ifdef _WIN32
             // On Windows, use only WASAPI
             if (dev.hostApiInfo->type == paMME || dev.hostApiInfo->type == paWDMKS) { continue; }
@@ -220,18 +488,25 @@ private:
             // Zero out output params
             dev.outputParams.device = i;
             dev.outputParams.sampleFormat = paFloat32;
-            dev.outputParams.suggestedLatency = std::min<PaTime>(AUDIO_LATENCY, dev.deviceInfo->defaultLowOutputLatency);
-            dev.outputParams.channelCount = std::min<int>(dev.deviceInfo->maxOutputChannels, 2);
-            dev.outputParams.hostApiSpecificStreamInfo = NULL;
+            dev.outputParams.channelCount =
+                std::min<int>(
+                    dev.deviceInfo->maxOutputChannels,
+                    2);
 
-            // List available sample rates
-            for (int sr = 12000; sr < 200000; sr += 12000) {
-                if (Pa_IsFormatSupported(NULL, &dev.outputParams, sr) != paFormatIsSupported) { continue; }
-                dev.sampleRates.push_back(sr);
-            }
-            for (int sr = 11025; sr < 192000; sr += 11025) {
-                if (Pa_IsFormatSupported(NULL, &dev.outputParams, sr) != paFormatIsSupported) { continue; }
-                dev.sampleRates.push_back(sr);
+            dev.outputParams.suggestedLatency =
+                std::min<PaTime>(
+                    AUDIO_LATENCY,
+                    dev.deviceInfo->defaultLowOutputLatency);
+
+            dev.outputParams.hostApiSpecificStreamInfo =
+                nullptr;
+
+            for (int sr = 12000; sr <= 192000; sr += 12000) {
+                if (Pa_IsFormatSupported(
+                        nullptr,
+                        &dev.outputParams,
+                        sr) == paFormatIsSupported)
+                    dev.sampleRates.push_back(sr);
             }
 
             // If no sample rates are supported, cancel adding device
@@ -239,54 +514,39 @@ private:
                 continue;
             }
 
-            // Sort sample rate list
-            std::sort(dev.sampleRates.begin(), dev.sampleRates.end(), [](double a, double b) { return (a < b); });
-
-            // Generate text list for UI
-            int srId = 0;
-            int _48kId = -1;
+            int idx = 0;
             for (auto sr : dev.sampleRates) {
-                snprintf(buffer, sizeof(buffer), "%d", (int)sr);
-                dev.sampleRatesTxt += buffer;
+                std::snprintf(buf,
+                              sizeof(buf),
+                              "%d",
+                              (int)sr);
+
+                dev.sampleRatesTxt += buf;
                 dev.sampleRatesTxt += '\0';
 
-                // Save ID of the default sample rate and 48KHz
-                if (sr == dev.deviceInfo->defaultSampleRate) { dev.defaultSrId = srId; }
-                if (sr == 48000.0) { _48kId = srId; }
-                srId++;
+                if (sr == 48000)
+                    dev.defaultSrId = idx;
+
+                idx++;
             }
 
-            // If a 48KHz option was found, use it instead of the default
-            if (_48kId >= 0) { dev.defaultSrId = _48kId; }
+            std::snprintf(
+                buf,
+                sizeof(buf),
+                "[%s] %s",
+                dev.hostApiInfo->name,
+                dev.deviceInfo->name);
 
-            std::string apiName = dev.hostApiInfo->name;
-
-#ifdef _WIN32
-            // Shorten the names on windows
-            if (apiName.rfind("Windows ", 0) == 0) {
-                apiName = apiName.substr(8);
-            }
-#endif
-            // Create device name and save to list
-            snprintf(buffer, sizeof(buffer), "[%s] %s", apiName.c_str(), dev.deviceInfo->name);
-            devices[buffer] = dev;
-            deviceNames.push_back(buffer);
-            deviceNamesTxt += buffer;
+            devices[buf] = dev;
+            deviceNames.push_back(buf);
+            deviceNamesTxt += buf;
             deviceNamesTxt += '\0';
         }
     }
 
     void selectDefault() {
         if (devices.empty()) {
-            selectedDevName = "";
-            return;
-        }
-
-        // Search for the default device
-        PaDeviceIndex defId = Pa_GetDefaultOutputDevice();
-        for (auto const& [name, dev] : devices) {
-            if (dev.id != defId) { continue; }
-            selectDevByName(name);
+            selectedDevName.clear();
             return;
         }
 
@@ -295,8 +555,12 @@ private:
     }
 
     void selectDevByName(std::string name) {
-        auto devIt = std::find(deviceNames.begin(), deviceNames.end(), name);
-        if (devIt == deviceNames.end()) {
+        auto it =
+            std::find(deviceNames.begin(),
+                      deviceNames.end(),
+                      name);
+
+        if (it == deviceNames.end()) {
             selectDefault();
             return;
         }
@@ -304,68 +568,19 @@ private:
         // Load the device name, device descriptor and device ID
         selectedDevName = name;
         selectedDev = devices[name];
-        devId = std::distance(deviceNames.begin(), devIt);
+        devId =
+            (int)std::distance(
+                deviceNames.begin(),
+                it);
 
-        // Load config
-        config.acquire();
-        if (!config.conf[_streamName]["devices"].contains(name)) {
-            config.conf[_streamName]["devices"][name] = selectedDev.sampleRates[selectedDev.defaultSrId];
-        }
-        config.release(true);
-
-        // Find the sample rate ID, if not use default
-        bool found = false;
-        double selectedSr = config.conf[_streamName]["devices"][name];
-        for (int i = 0; i < selectedDev.sampleRates.size(); i++) {
-            if (selectedDev.sampleRates[i] != selectedSr) { continue; }
-            srId = i;
-            found = true;
-            break;
-        }
-        if (!found) {
-            srId = selectedDev.defaultSrId;
-        }
+        srId = selectedDev.defaultSrId;
     }
 
-    static int _mono_cb(const void* input, void* output, unsigned long frameCount,
-                        const PaStreamCallbackTimeInfo* timeInfo, PaStreamCallbackFlags statusFlags, void* userData) {
-        AudioSink* _this = (AudioSink*)userData;
-
-        // For OSX, mute audio when not playing
-        if (!gui::mainWindow.isPlaying()) {
-            memset(output, 0, frameCount * sizeof(float));
-            _this->s2m.out.flush();
-            return 0;
-        }
-
-        // Write to buffer
-        _this->s2m.out.read();
-        memcpy(output, _this->s2m.out.readBuf, frameCount * sizeof(float));
-        _this->s2m.out.flush();
-        return 0;
-    }
-
-    static int _stereo_cb(const void* input, void* output, unsigned long frameCount,
-                          const PaStreamCallbackTimeInfo* timeInfo, PaStreamCallbackFlags statusFlags, void* userData) {
-        AudioSink* _this = (AudioSink*)userData;
-
-        // For OSX, mute audio when not playing
-        if (!gui::mainWindow.isPlaying()) {
-            memset(output, 0, frameCount * sizeof(dsp::stereo_t));
-            _this->packer.out.flush();
-            return 0;
-        }
-
-        // Write to buffer
-        _this->packer.out.read();
-        memcpy(output, _this->packer.out.readBuf, frameCount * sizeof(dsp::stereo_t));
-        _this->packer.out.flush();
-        return 0;
-    }
-
+private:
     std::string _streamName;
-
     bool running = false;
+    bool stereo = false;
+
     std::map<std::string, AudioDevice_t> devices;
     std::vector<std::string> deviceNames;
     std::string deviceNamesTxt;
@@ -373,49 +588,71 @@ private:
     AudioDevice_t selectedDev;
     std::string selectedDevName;
 
-    SinkManager::Stream* _stream;
+    SinkManager::Stream* _stream = nullptr;
+
     dsp::buffer::Packer<dsp::stereo_t> packer;
     dsp::convert::StereoToMono s2m;
 
-    PaStream* devStream;
-
+    PaStream* devStream = nullptr;
     EventHandler<bool> playStateHandler;
+
+    std::thread workerThread;
+    std::atomic<bool> workerRunning{ false };
+
+    std::queue<AudioBlock> audioQueue;
+    std::mutex queueMtx;
+    std::atomic<uint64_t> paUnderflows{ 0 };
+    std::atomic<uint64_t> paOverflows{ 0 };
+    std::atomic<uint64_t> queueUnderruns{ 0 };
+    std::atomic<uint64_t> queueOverruns{ 0 };
+    std::atomic<uint64_t> lateCallbacks{ 0 };
+    std::atomic<uint64_t> callbackCount{ 0 };
+
+    std::atomic<double> lastCallbackDeltaMs{ 0 };
+    std::atomic<double> maxCallbackDeltaMs{ 0 };
+
+    double currentSampleRate = 48000.0;
+    unsigned long currentFrameCount = 2048;
+
+    std::chrono::steady_clock::time_point cbLastTs{};
+    bool cbHasLastTs = false;
 };
 
 class AudioSinkModule : public ModuleManager::Instance {
 public:
     AudioSinkModule(std::string name) {
-        this->name = name;
+        this->name = std::move(name);
+
         provider.create = create_sink;
         provider.ctx = this;
 
         Pa_Initialize();
 
-        sigpath::sinkManager.registerSinkProvider("New Audio", provider);
+        sigpath::sinkManager.registerSinkProvider(
+            "New Audio",
+            provider);
     }
 
     ~AudioSinkModule() {
-        sigpath::sinkManager.unregisterSinkProvider("New Audio");
+        sigpath::sinkManager.unregisterSinkProvider(
+            "New Audio");
+
         Pa_Terminate();
     }
 
     void postInit() {}
-
-    void enable() {
-        enabled = true;
-    }
-
-    void disable() {
-        enabled = false;
-    }
-
-    bool isEnabled() {
-        return enabled;
-    }
+    void enable() { enabled = true; }
+    void disable() { enabled = false; }
+    bool isEnabled() { return enabled; }
 
 private:
-    static SinkManager::Sink* create_sink(SinkManager::Stream* stream, std::string streamName, void* ctx) {
-        return (SinkManager::Sink*)(new AudioSink(stream, streamName));
+    static SinkManager::Sink* create_sink(
+        SinkManager::Stream* stream,
+        std::string streamName,
+        void*) {
+        return (SinkManager::Sink*)new AudioSink(
+            stream,
+            std::move(streamName));
     }
 
     std::string name;
@@ -424,14 +661,16 @@ private:
 };
 
 MOD_EXPORT void _INIT_() {
-    config.setPath(core::args["root"].s() + "/new_audio_sink_config.json");
+    config.setPath(
+        core::args["root"].s() +
+        "/new_audio_sink_config.json");
+
     config.load(json::object());
     config.enableAutoSave();
 }
 
 MOD_EXPORT void* _CREATE_INSTANCE_(std::string name) {
-    AudioSinkModule* instance = new AudioSinkModule(name);
-    return instance;
+    return new AudioSinkModule(std::move(name));
 }
 
 MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {

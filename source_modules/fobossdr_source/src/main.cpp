@@ -8,6 +8,8 @@
 #include <atomic>
 #include <fobos.h>
 
+#include <utils/threading.h>
+
 SDRPP_MOD_INFO{
     /* Name:            */ "fobossdr_source",
     /* Description:     */ "FobosSDR Source Module",
@@ -449,6 +451,7 @@ private:
     }
 
     void worker() {
+        utils::setCurrentThreadName("FobosSDR Worker");
         // Select different processing depending on the mode
         if (port == PORT_RF && sampleRate >= 50e6) {
             while (run) {

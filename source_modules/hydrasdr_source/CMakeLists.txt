@@ -10,7 +10,7 @@ if (MSVC)
 
     target_include_directories(hydrasdr_source PUBLIC "C:/Program Files/hydrasdr-host/include/libhydrasdr")
 
-    target_link_libraries(hydrasdr_source PRIVATE hydrasdr)
+    target_link_libraries(hydrasdr_source PRIVATE "C:/Program Files/hydrasdr-host/lib/hydrasdr.lib")
 elseif (ANDROID)
     target_include_directories(hydrasdr_source PUBLIC
     /sdr-kit/${ANDROID_ABI}/include/libhydrasdr

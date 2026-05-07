@@ -12,6 +12,8 @@
 #include <gui/dialogs/dialog_box.h>
 #include <core.h>
 
+#include <utils/threading.h>
+
 SDRPP_MOD_INFO{
     /* Name:            */ "iq_exporter",
     /* Description:     */ "Export raw IQ through TCP or UDP",
@@ -456,6 +458,7 @@ private:
     }
 
     void listenWorker() {
+        utils::setCurrentThreadName("IQ Exporter Listen Worker");
         while (true) {
             // Accept a client
             auto newSock = listener->accept();

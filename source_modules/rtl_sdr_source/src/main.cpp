@@ -8,6 +8,8 @@
 #include <gui/smgui.h>
 #include <rtl-sdr.h>
 
+#include <utils/threading.h>
+
 #ifdef __ANDROID__
 #include <android_backend.h>
 #endif
@@ -524,6 +526,7 @@ private:
     }
 
     void worker() {
+        utils::setCurrentThreadName("RTLSDR Worker");
         rtlsdr_reset_buffer(openDev);
         rtlsdr_read_async(openDev, asyncHandler, this, 0, asyncCount);
     }

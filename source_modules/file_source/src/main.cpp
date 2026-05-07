@@ -13,6 +13,9 @@
 #include <algorithm>
 #include <stdexcept>
 
+
+#include <utils/threading.h>
+
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
 SDRPP_MOD_INFO{
@@ -152,6 +155,7 @@ private:
     }
 
     static void worker(void* ctx) {
+        utils::setCurrentThreadName("File Source Worker");
         FileSourceModule* _this = (FileSourceModule*)ctx;
         double sampleRate = std::max(_this->reader->getSampleRate(), (uint32_t)1);
         int blockSize = std::min((int)(sampleRate / 200.0f), (int)STREAM_BUFFER_SIZE);

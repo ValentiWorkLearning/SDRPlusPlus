@@ -1,6 +1,8 @@
 #include "hermes.h"
 #include <utils/flog.h>
 
+#include <utils/threading.h>
+
 namespace hermes {
     const int SAMPLERATE_LIST[] = {
         48000,
@@ -163,6 +165,7 @@ namespace hermes {
     }
 
     void Client::worker() {
+        utils::setCurrentThreadName("Hermes Worker");
         uint8_t rbuf[2048];
         MetisUSBPacket* pkt = (MetisUSBPacket*)rbuf;
         int sampleCount = 0;
