@@ -56,10 +56,10 @@ void SpectranHTTPClient::setCenterFrequency(uint64_t freq) {
     // Encode request body
     net::http::RequestHeader rqhdr(net::http::METHOD_PUT, "/remoteconfig", host);
     char buf[1024];
-    sprintf(buf, "{\"receiverName\": \"Block_IQDemodulator_0\", \"simpleconfig\": {\"main\": {\"centerfreq\": %" PRIu64 ", \"samplerate\": %" PRIu64 ", \"spanfreq\": %" PRIu64 "}}}", freq, _samplerate, _samplerate);
+    snprintf(buf, sizeof(buf), "{\"receiverName\": \"Block_IQDemodulator_0\", \"simpleconfig\": {\"main\": {\"centerfreq\": %" PRIu64 ", \"samplerate\": %" PRIu64 ", \"spanfreq\": %" PRIu64 "}}}", freq, _samplerate, _samplerate);
     std::string data = buf;
     char lenBuf[16];
-    sprintf(lenBuf, "%" PRIu64, (uint64_t)data.size());
+    snprintf(lenBuf, sizeof(lenBuf), "%" PRIu64, (uint64_t)data.size());
 
     // Setup request headers
     rqhdr.setField("Content-Length", lenBuf);

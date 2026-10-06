@@ -44,8 +44,27 @@ cp $build_dir/source_modules/perseus_source/Release/perseus_source.dll sdrpp_win
 cp 'C:/Program Files/PothosSDR/bin/perseus-sdr.dll' sdrpp_windows_x64/
 
 cp $build_dir/source_modules/plutosdr_source/Release/plutosdr_source.dll sdrpp_windows_x64/modules/
-cp 'C:/Program Files/PothosSDR/bin/libiio.dll' sdrpp_windows_x64/
-cp 'C:/Program Files/PothosSDR/bin/libad9361.dll' sdrpp_windows_x64/
+
+# PlutoSDR / PlutoPlus runtime dependencies
+$PothosBin = 'C:/Program Files/PothosSDR/bin'
+
+$PlutoRuntimeDlls = @(
+    'libiio.dll',
+    'libad9361.dll',
+    'libxml2.dll',
+    'libusb-1.0.dll',
+    'libserialport-0.dll'
+)
+
+foreach ($dll in $PlutoRuntimeDlls) {
+    $src = Join-Path $PothosBin $dll
+
+    if (Test-Path $src) {
+        cp $src sdrpp_windows_x64/ -Force
+    } else {
+        Write-Warning "Missing Pluto runtime dependency: $src"
+    }
+}
 
 cp $build_dir/source_modules/rfnm_source/Release/rfnm_source.dll sdrpp_windows_x64/modules/
 cp 'C:/Program Files/RFNM/bin/rfnm.dll' sdrpp_windows_x64/
@@ -270,6 +289,6 @@ pause
 '@ | Out-File -Encoding ASCII "$PackageRoot/start_sdrpp_debug.bat"
 
 
-Compress-Archive -Path sdrpp_windows_x64/ -DestinationPath sdrpp_windows_x64.zip
+Compress-Archive -Path sdrpp_windows_x64/* -DestinationPath sdrpp_windows_x64.zip -Force
 
 rm -Force -Recurse sdrpp_windows_x64

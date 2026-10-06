@@ -98,13 +98,13 @@ private:
     std::string getBandwdithScaled(double bw) {
         char buf[1024];
         if (bw >= 1000000.0) {
-            sprintf(buf, "%.1lfMHz", bw / 1000000.0);
+            snprintf(buf, sizeof(buf), "%.1lfMHz", bw / 1000000.0);
         }
         else if (bw >= 1000.0) {
-            sprintf(buf, "%.1lfKHz", bw / 1000.0);
+            snprintf(buf, sizeof(buf), "%.1lfKHz", bw / 1000.0);
         }
         else {
-            sprintf(buf, "%.1lfHz", bw);
+            snprintf(buf, sizeof(buf), "%.1lfHz", bw);
         }
         return std::string(buf);
     }
@@ -447,13 +447,18 @@ private:
     }
 
     static void worker(void* ctx) {
-        PlutoSDRSourceModule* _this = (PlutoSDRSourceModule*)ctx;
+
         utils::setCurrentThreadName("PlutoSDR Worker");
-        int blockSize = _this->samplerate / 200.0f;
+
+        PlutoSDRSourceModule* _this = static_cast<PlutoSDRSourceModule*>(ctx);
+
+        static constexpr size_t IIO_BUFFER_SAMPLES = 1 << 16; // 65536 complex samples
+        static constexpr size_t KERNEL_BUFFER_COUNT = 8;
 
         // Acquire channels
-        iio_channel* rx0_i = iio_device_find_channel(_this->dev, "voltage0", 0);
-        iio_channel* rx0_q = iio_device_find_channel(_this->dev, "voltage1", 0);
+        iio_channel* rx0_i = iio_device_find_channel(_this->dev, "voltage0", false);
+        iio_channel* rx0_q = iio_device_find_channel(_this->dev, "voltage1", false);
+
         if (!rx0_i || !rx0_q) {
             flog::error("Failed to acquire RX channels");
             return;
@@ -463,29 +468,53 @@ private:
         iio_channel_enable(rx0_i);
         iio_channel_enable(rx0_q);
 
+        const int kret = iio_device_set_kernel_buffers_count(
+            _this->dev,
+            KERNEL_BUFFER_COUNT);
+
+        if (kret < 0) {
+            flog::warn("Failed to set kernel buffer count: {}", kret);
+        }
         // Allocate buffer
-        iio_buffer* rxbuf = iio_device_create_buffer(_this->dev, blockSize, false);
+        iio_buffer* rxbuf = iio_device_create_buffer(
+            _this->dev,
+            IIO_BUFFER_SAMPLES,
+            false);
+
         if (!rxbuf) {
             flog::error("Could not create RX buffer");
+            iio_channel_disable(rx0_i);
+            iio_channel_disable(rx0_q);
             return;
         }
 
         // Receive loop
-        while (true) {
-            // Read samples
-            iio_buffer_refill(rxbuf);
+        while (_this->running) {
+            const ssize_t nbytes = iio_buffer_refill(rxbuf);
+            if (nbytes < 0) {
+                flog::error("iio_buffer_refill failed: {}", (int)nbytes);
+                break;
+            }
 
-            // Get buffer pointer
-            int16_t* buf = (int16_t*)iio_buffer_first(rxbuf, rx0_i);
-            if (!buf) { break; }
+            auto* buf = static_cast<int16_t*>(iio_buffer_first(rxbuf, rx0_i));
+            if (!buf) {
+                flog::error("iio_buffer_first returned null");
+                break;
+            }
 
+            const size_t sampleCount =
+                static_cast<size_t>(nbytes) / (sizeof(int16_t) * 2);
             // Convert samples to CF32
-            volk_16i_s32f_convert_32f((float*)_this->stream.writeBuf, buf, 32768.0f, blockSize * 2);
-
+            volk_16i_s32f_convert_32f(
+                reinterpret_cast<float*>(_this->stream.writeBuf),
+                buf,
+                32768.0f,
+                sampleCount * 2);
             // Send out the samples
-            if (!_this->stream.swap(blockSize)) { break; };
+            if (!_this->stream.swap(static_cast<int>(sampleCount))) {
+                break;
+            }
         }
-
         // Stop streaming
         iio_channel_disable(rx0_i);
         iio_channel_disable(rx0_q);

@@ -281,7 +281,7 @@ private:
                 if (_this->running) {
                     uint8_t val;
                     dlcr_si5351c_read_reg(_this->openDev, std::stoi(_this->clkRegStr, NULL, 16), &val);
-                    sprintf(_this->clkValStr, "%02X", val);
+                    snprintf(_this->clkValStr, sizeof(_this->clkValStr), "%02X", val);
                 }
             }
             SmGui::FillWidth();
@@ -304,7 +304,7 @@ private:
                 if (_this->running) {
                     uint16_t val;
                     dlcr_lmx2572_read_reg(_this->openDev, std::stoi(_this->synRegStr, NULL, 16), &val);
-                    sprintf(_this->synValStr, "%02X", val);
+                    snprintf(_this->synValStr, sizeof(_this->synValStr), "%02X", val);
                 }
             }
             SmGui::FillWidth();
@@ -327,7 +327,7 @@ private:
                 if (_this->running) {
                     uint8_t val;
                     dlcr_mcp37211_read_reg(_this->openDev, std::stoi(_this->adcRegStr, NULL, 16), &val);
-                    sprintf(_this->adcValStr, "%02X", val);
+                    snprintf(_this->adcValStr, sizeof(_this->adcValStr), "%02X", val);
                 }
             }
             SmGui::FillWidth();
@@ -350,7 +350,7 @@ private:
                 if (_this->running) {
                     uint8_t val[8];
                     dlcr_r860_read_reg(_this->openDev, DLCR_TUNER_ALL, std::stoi(_this->tunRegStr, NULL, 16), val);
-                    sprintf(_this->tunValStr, "%02X", val[0]);
+                    snprintf(_this->tunValStr, sizeof(_this->tunValStr), "%02X", val[0]);
                     for (int i = 0; i < 8; i++) {
                         printf("TUNER[%d][0x%02X] = 0x%02X\n", i, std::stoi(_this->tunRegStr, NULL, 16), val[i]);
                     }
